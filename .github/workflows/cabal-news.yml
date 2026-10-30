@@ -1,11 +1,15 @@
 name: CABAL EU News Monitor
 
 on:
-  # Automatyczne sprawdzanie co 5 minut
+  # Normalny monitor:
+  # 05, 10, 20, 25, 35, 40, 50, 55
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "5,10,20,25,35,40,50,55 * * * *"
 
-  # Ręczne uruchomienie
+  # Co 15 minut:
+  # normalny monitor + leak scanner
+    - cron: "0,15,30,45 * * * *"
+
   workflow_dispatch:
     inputs:
       test_message:
@@ -16,6 +20,12 @@ on:
 
       populate_last_10:
         description: "Populate Discord with the latest 10 CABAL news"
+        required: true
+        default: false
+        type: boolean
+
+      leak_scan:
+        description: "Scan next 20 unpublished IDs for LEAKS"
         required: true
         default: false
         type: boolean
@@ -46,13 +56,18 @@ jobs:
       - name: Check CABAL EU news
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
           TEST_MESSAGE: ${{ inputs.test_message }}
+
           POPULATE_LAST_10: ${{ inputs.populate_last_10 }}
+
+          RUN_LEAK_SCAN: ${{ github.event.schedule == '0,15,30,45 * * * *' || inputs.leak_scan == true }}
+
         run: python cabal_news.py
 
       - name: Save news state
         run: |
-          if [ -z "$(git status --porcelain -- state.json)" ]; then
+          if [ -z "$(git status --porcelain -- state.json leaks.json)" ]; then
             echo "No state changes."
             exit 0
           fi
@@ -60,6 +75,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add state.json
+          if [ -f state.json ]; then
+            git add state.json
+          fi
+
+          if [ -f leaks.json ]; then
+            git add leaks.json
+          fi
+
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+
           git commit -m "Update CABAL news state"
           git push
