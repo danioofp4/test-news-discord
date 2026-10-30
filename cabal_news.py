@@ -127,11 +127,24 @@ def save_seen_ids(seen_ids):
     )
 
 
-def send_discord_embed(title, url):
+def send_discord_embed(title, url, test=False):
     if not WEBHOOK_URL:
         raise RuntimeError(
             "DISCORD_WEBHOOK_URL is not configured."
         )
+
+    if test:
+        description = (
+            "🧪 **TEST MESSAGE**\n\n"
+            "This is a test of the CABAL EU news monitor."
+        )
+        footer = "CABAL EU News Monitor • TEST"
+    else:
+        description = (
+            "A new announcement has appeared "
+            "on the CABAL EU website."
+        )
+        footer = "CABAL EU News Monitor"
 
     payload = {
         "username": "CABAL EU News",
@@ -139,7 +152,7 @@ def send_discord_embed(title, url):
             {
                 "title": title,
                 "url": url,
-                "description": "A new announcement has appeared on the CABAL EU website.",
+                "description": description,
                 "color": 16744192,
                 "fields": [
                     {
@@ -149,7 +162,7 @@ def send_discord_embed(title, url):
                     }
                 ],
                 "footer": {
-                    "text": "CABAL EU News Monitor"
+                    "text": footer
                 },
             }
         ],
@@ -162,7 +175,6 @@ def send_discord_embed(title, url):
     )
 
     response.raise_for_status()
-
 
 def send_startup_message(latest):
     title = get_news_title(latest["url"])
