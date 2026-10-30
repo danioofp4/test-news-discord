@@ -70,13 +70,31 @@ def get_news_title(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    h1 = soup.find("h1")
+    # CABAL ma kilka nagłówków H1, w tym logo PlayThisGame.
+    # Szukamy właściwego tytułu artykułu.
+    for heading in soup.find_all(["h1", "h2"]):
+        text = heading.get_text(" ", strip=True)
 
-    if h1:
-        return h1.get_text(" ", strip=True)
+        if (
+            text
+            and text.lower() not in {
+                "playthisgame",
+                "cabal",
+                "news",
+            }
+        ):
+            return text
+
+    # Fallback: tytuł dokumentu HTML.
+    if soup.title:
+        title = soup.title.get_text(" ", strip=True)
+
+        if " - " in title:
+            return title.rsplit(" - ", 1)[-1].strip()
+
+        return title
 
     return "New CABAL EU News"
-
 
 def load_seen_ids():
     if not STATE_FILE.exists():
