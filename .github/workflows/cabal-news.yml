@@ -1,92 +1,12 @@
-name: CABAL EU News Monitor
+name: CABAL EU News Monitor Test
 
 on:
-  # Normalny monitor:
-  # 05, 10, 20, 25, 35, 40, 50, 55
-  schedule:
-    - cron: "5,10,20,25,35,40,50,55 * * * *"
-
-  # Co 15 minut:
-  # normalny monitor + leak scanner
-    - cron: "0,15,30,45 * * * *"
-
   workflow_dispatch:
-    inputs:
-      test_message:
-        description: "Send latest CABAL news as a test message"
-        required: true
-        default: false
-        type: boolean
-
-      populate_last_10:
-        description: "Populate Discord with the latest 10 CABAL news"
-        required: true
-        default: false
-        type: boolean
-
-      leak_scan:
-        description: "Scan next 20 unpublished IDs for LEAKS"
-        required: true
-        default: false
-        type: boolean
-
-permissions:
-  contents: write
-
-concurrency:
-  group: cabal-eu-news-monitor
-  cancel-in-progress: false
 
 jobs:
-  check-news:
+  test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Check CABAL EU news
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-          TEST_MESSAGE: ${{ inputs.test_message }}
-
-          POPULATE_LAST_10: ${{ inputs.populate_last_10 }}
-
-          RUN_LEAK_SCAN: ${{ github.event.schedule == '0,15,30,45 * * * *' || inputs.leak_scan == true }}
-
-        run: python cabal_news.py
-
-      - name: Save news state
-        run: |
-          if [ -z "$(git status --porcelain -- state.json leaks.json)" ]; then
-            echo "No state changes."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if [ -f state.json ]; then
-            git add state.json
-          fi
-
-          if [ -f leaks.json ]; then
-            git add leaks.json
-          fi
-
-          if git diff --cached --quiet; then
-            echo "Nothing to commit."
-            exit 0
-          fi
-
-          git commit -m "Update CABAL news state"
-          git push
+      - name: Test
+        run: echo "OK"
