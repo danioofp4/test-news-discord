@@ -806,13 +806,13 @@ def classify_region(
         )
 
     in_eu_titles = title_exists_in_list(
-        news_id
+        news_id,
         title,
         eu_news,
     )
 
     in_na_titles = title_exists_in_list(
-        news_id
+        news_id,
         title,
         na_news,
     )
