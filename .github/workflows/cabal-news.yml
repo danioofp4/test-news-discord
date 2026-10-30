@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: "*/5 * * * *"
 
-  # Ręczne uruchomienie z opcją wysłania wiadomości testowej
+  # Ręczne uruchomienie
   workflow_dispatch:
     inputs:
       test_message:
@@ -13,11 +13,12 @@ on:
         required: true
         default: false
         type: boolean
-     populate_last_10:
-      description: "Populate Discord with the latest 10 CABAL news"
-      required: true
-      default: false
-      type: boolean
+
+      populate_last_10:
+        description: "Populate Discord with the latest 10 CABAL news"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
