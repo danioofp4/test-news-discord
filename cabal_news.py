@@ -16,6 +16,9 @@ WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 TEST_MESSAGE = os.environ.get(
     "TEST_MESSAGE", ""
 ).lower() in {"1", "true", "yes", "on"}
+POPULATE_LAST_10 = os.environ.get(
+    "POPULATE_LAST_10", ""
+).lower() in {"1", "true", "yes", "on"}
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -110,7 +113,35 @@ def load_seen_ids():
 
     except Exception:
         return set()
+        
+def print_last_seen_ids(limit=10):
+    if not STATE_FILE.exists():
+        print("state.json does not exist yet.")
+        return
 
+    try:
+        data = json.loads(
+            STATE_FILE.read_text(encoding="utf-8")
+        )
+
+        seen_ids = data.get("seen_ids", [])
+
+        # Sort newest ID first
+        seen_ids = sorted(
+            seen_ids,
+            key=lambda x: int(x),
+            reverse=True,
+        )
+
+        latest = seen_ids[:limit]
+
+        print(f"Latest {len(latest)} saved news IDs:")
+
+        for news_id in latest:
+            print(f" - {news_id}")
+
+    except Exception as e:
+        print(f"Could not read state.json: {e}")
 
 def save_seen_ids(seen_ids):
     data = {
@@ -205,7 +236,34 @@ def send_startup_message(latest):
     )
 
     response.raise_for_status()
+def populate_last_news(current_news, limit=10):
+    items = current_news[:limit]
 
+    print(
+        f"Populating Discord with "
+        f"{len(items)} latest CABAL EU articles."
+    )
+
+    # Strona CABAL zwraca najnowsze jako pierwsze.
+    # Na Discord wysyłamy od najstarszego do najnowszego,
+    # żeby najnowszy znalazł się na samym dole kanału.
+    for item in reversed(items):
+        title = get_news_title(item["url"])
+
+        print(
+            f"Populate article: "
+            f"{item['id']} - {title}"
+        )
+
+        send_discord_embed(
+            title,
+            item["url"],
+        )
+
+    print(
+        f"Successfully populated Discord "
+        f"with {len(items)} articles."
+    )
 
 def main():
     if not WEBHOOK_URL:
@@ -220,8 +278,27 @@ def main():
             "No CABAL news entries found. "
             "The website structure may have changed."
         )
-    # Manual test from GitHub Actions.
-    # Sends the latest article but DOES NOT modify state.json.
+
+    # Prevent accidentally running both manual modes.
+    if TEST_MESSAGE and POPULATE_LAST_10:
+        raise RuntimeError(
+            "Select either TEST_MESSAGE or POPULATE_LAST_10, "
+            "not both."
+        )
+
+    # Manual population:
+    # send the latest 10 articles to Discord.
+    # DOES NOT modify state.json.
+    if POPULATE_LAST_10:
+        populate_last_news(
+            current_news,
+            limit=10,
+        )
+        return
+
+    # Manual test:
+    # send only the latest article.
+    # DOES NOT modify state.json.
     if TEST_MESSAGE:
         latest = current_news[0]
 
@@ -242,8 +319,9 @@ def main():
 
         print("Test message sent successfully.")
         return
-    seen_ids = load_seen_ids()
 
+    seen_ids = load_seen_ids()
+   
     # First ever run:
     # remember everything currently on the page
     # and send only a startup/test message.
