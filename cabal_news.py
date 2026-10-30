@@ -220,7 +220,28 @@ def main():
             "No CABAL news entries found. "
             "The website structure may have changed."
         )
+    # Manual test from GitHub Actions.
+    # Sends the latest article but DOES NOT modify state.json.
+    if TEST_MESSAGE:
+        latest = current_news[0]
 
+        title = get_news_title(
+            latest["url"]
+        )
+
+        print(
+            f"Sending TEST message: "
+            f"{latest['id']} - {title}"
+        )
+
+        send_discord_embed(
+            title,
+            latest["url"],
+            test=True,
+        )
+
+        print("Test message sent successfully.")
+        return
     seen_ids = load_seen_ids()
 
     # First ever run:
