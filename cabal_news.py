@@ -25,6 +25,7 @@ LEAK_LOOKAHEAD = 20
 TITLE_MAX_ID_DISTANCE = 30
 
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
+UNKNOWN_WEBHOOK_URL = os.environ.get("DISCORD_UNKNOWN_WEBHOOK_URL")
 
 TEST_MESSAGE = os.environ.get(
     "TEST_MESSAGE", ""
@@ -321,6 +322,7 @@ def load_leak_state():
         "leak_ids": [],
         "ignored_na_ids": [],
         "pending_ids": [],
+        "unknown_notified_ids": [],
     }
 
     if not LEAK_STATE_FILE.exists():
@@ -355,6 +357,13 @@ def load_leak_state():
                     [],
                 )
             ],
+            "unknown_notified_ids": [
+                str(x)
+                for x in data.get(
+                    "unknown_notified_ids",
+                    [],
+                )
+            ],
         }
 
     except Exception as error:
@@ -382,6 +391,12 @@ def save_leak_state(state):
 
         "pending_ids": sorted(
             set(state["pending_ids"]),
+            key=lambda x: int(x),
+            reverse=True,
+        )[:500],
+
+        "unknown_notified_ids": sorted(
+            set(state["unknown_notified_ids"]),
             key=lambda x: int(x),
             reverse=True,
         )[:500],
@@ -538,6 +553,146 @@ def send_discord_embed(
         )
 
     response.raise_for_status()
+
+
+
+def send_unknown_discord_embed(
+    article,
+    reason,
+):
+    if not UNKNOWN_WEBHOOK_URL:
+        print(
+            "DISCORD_UNKNOWN_WEBHOOK_URL is not configured. "
+            "UNKNOWN notification skipped."
+        )
+        return False
+
+    news_id = str(
+        article.get("id", "")
+    ).strip()
+
+    base_title = (
+        article.get("title")
+        or "CABAL Unknown Leak Candidate"
+    )
+
+    title = (
+        f"{base_title} - {news_id}"
+        if news_id
+        else base_title
+    )
+
+    text = (
+        f"{article.get('title', '')}\n"
+        f"{article.get('body', '')}"
+    )
+
+    prices = extract_ecoin_prices(
+        article.get("body", "")
+    )
+
+    eu_currency, na_currency = currency_markers(
+        text
+    )
+
+    date = article.get(
+        "date",
+        "",
+    )
+
+    description_parts = [
+        "⚠️ **UNKNOWN LEAK CANDIDATE**",
+        (
+            "An unpublished English article was found, "
+            "but its region cannot yet be determined."
+        ),
+    ]
+
+    if date:
+        description_parts.append(
+            f"📅 **{date}**"
+        )
+
+    description_parts.append(
+        f"🪙 **eCoins:** "
+        f"{prices if prices else 'none detected'}"
+    )
+
+    description_parts.append(
+        f"🇪🇺 **EUR markers:** "
+        f"{eu_currency if eu_currency else 'none'}"
+    )
+
+    description_parts.append(
+        f"🇺🇸 **USD markers:** "
+        f"{na_currency if na_currency else 'none'}"
+    )
+
+    description_parts.append(
+        f"🧭 **Reason:** {reason}"
+    )
+
+    embed = {
+        "title": title,
+        "url": article["url"],
+        "description": "\n".join(
+            description_parts
+        ),
+        "color": 16753920,
+        "footer": {
+            "text": "CABAL News Scanner • UNKNOWN"
+        },
+    }
+
+    image_url = article.get(
+        "image_url",
+        "",
+    )
+
+    if image_url:
+        embed["thumbnail"] = {
+            "url": image_url
+        }
+
+    payload = {
+        "username": "CABAL Leak Scanner",
+        "embeds": [
+            embed
+        ],
+    }
+
+    response = requests.post(
+        UNKNOWN_WEBHOOK_URL,
+        json=payload,
+        timeout=30,
+    )
+
+    if response.status_code == 429:
+        retry_after = float(
+            response.json().get(
+                "retry_after",
+                1,
+            )
+        )
+
+        print(
+            f"UNKNOWN Discord rate limit. "
+            f"Retrying after {retry_after} seconds."
+        )
+
+        time.sleep(
+            retry_after
+        )
+
+        response = requests.post(
+            UNKNOWN_WEBHOOK_URL,
+            json=payload,
+            timeout=30,
+        )
+
+    response.raise_for_status()
+
+    return True
 
 
 def send_startup_message(latest):
@@ -1762,6 +1917,10 @@ def scan_for_leaks(
         leak_state["pending_ids"]
     )
 
+    unknown_notified_ids = set(
+        leak_state["unknown_notified_ids"]
+    )
+
     eu_ids = {
         item["id"]
         for item in eu_news
@@ -1983,6 +2142,32 @@ def scan_for_leaks(
                 news_id
             )
 
+            leak_state["leak_ids"] = list(
+                leak_ids
+            )
+
+            leak_state[
+                "ignored_na_ids"
+            ] = list(
+                ignored_na_ids
+            )
+
+            leak_state[
+                "pending_ids"
+            ] = list(
+                pending_ids
+            )
+
+            leak_state[
+                "unknown_notified_ids"
+            ] = list(
+                unknown_notified_ids
+            )
+
+            save_leak_state(
+                leak_state
+            )
+
             found += 1
             time.sleep(0.5)
 
@@ -2011,6 +2196,58 @@ def scan_for_leaks(
             pending_ids.add(
                 news_id
             )
+
+            if news_id not in unknown_notified_ids:
+                print(
+                    f"{news_id}: sending one-time "
+                    f"UNKNOWN notification."
+                )
+
+                sent_unknown = send_unknown_discord_embed(
+                    article,
+                    reason,
+                )
+
+                if sent_unknown:
+                    unknown_notified_ids.add(
+                        news_id
+                    )
+
+                    leak_state["leak_ids"] = list(
+                        leak_ids
+                    )
+
+                    leak_state[
+                        "ignored_na_ids"
+                    ] = list(
+                        ignored_na_ids
+                    )
+
+                    leak_state[
+                        "pending_ids"
+                    ] = list(
+                        pending_ids
+                    )
+
+                    leak_state[
+                        "unknown_notified_ids"
+                    ] = list(
+                        unknown_notified_ids
+                    )
+
+                    save_leak_state(
+                        leak_state
+                    )
+
+                    print(
+                        f"{news_id}: UNKNOWN notification sent "
+                        f"and remembered."
+                    )
+            else:
+                print(
+                    f"{news_id}: UNKNOWN already notified "
+                    f"- no repeat message."
+                )
 
     # Clean up IDs that have since become official.
     for news_id in na_ids:
@@ -2043,6 +2280,12 @@ def scan_for_leaks(
         pending_ids
     )
 
+    leak_state[
+        "unknown_notified_ids"
+    ] = list(
+        unknown_notified_ids
+    )
+
     save_leak_state(
         leak_state
     )
@@ -2053,7 +2296,9 @@ def scan_for_leaks(
         f"Pending: "
         f"{len(pending_ids)}. "
         f"Known NA ignored: "
-        f"{len(ignored_na_ids)}."
+        f"{len(ignored_na_ids)}. "
+        f"UNKNOWN notified: "
+        f"{len(unknown_notified_ids)}."
     )
 
 
