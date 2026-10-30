@@ -13,6 +13,11 @@ on:
         required: true
         default: false
         type: boolean
+     populate_last_10:
+      description: "Populate Discord with the latest 10 CABAL news"
+      required: true
+      default: false
+      type: boolean
 
 permissions:
   contents: write
@@ -41,6 +46,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           TEST_MESSAGE: ${{ inputs.test_message }}
+          POPULATE_LAST_10: ${{ inputs.populate_last_10 }}
         run: python cabal_news.py
 
       - name: Save news state
