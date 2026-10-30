@@ -22,6 +22,7 @@ OFFICIAL_STATE_FILE = Path("state.json")
 LEAK_STATE_FILE = Path("leaks.json")
 
 LEAK_LOOKAHEAD = 20
+TITLE_MAX_ID_DISTANCE = 30
 
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
@@ -47,8 +48,13 @@ HEADERS = {
 DetectorFactory.seed = 0
 
 
+# =========================================================
+# LIST PARSING
+# =========================================================
+
 def extract_image_url(element, base_url):
     image = element.find("img")
+
     if not image:
         return ""
 
@@ -66,7 +72,9 @@ def extract_image_url(element, base_url):
 
 
 def extract_list_metadata(link, base_url):
-    date_pattern = re.compile(r"\d{1,2}/\d{1,2}/\d{4}")
+    date_pattern = re.compile(
+        r"\d{1,2}/\d{1,2}/\d{4}"
+    )
 
     candidates = [link]
     parent = link.parent
@@ -74,6 +82,7 @@ def extract_list_metadata(link, base_url):
     for _ in range(6):
         if parent is None:
             break
+
         candidates.append(parent)
         parent = parent.parent
 
@@ -81,13 +90,19 @@ def extract_list_metadata(link, base_url):
     best_score = -1
 
     for candidate in candidates:
-        text = candidate.get_text(" ", strip=True)
+        text = candidate.get_text(
+            " ",
+            strip=True,
+        )
+
         score = 0
 
         if date_pattern.search(text):
             score += 3
+
         if candidate.find("img"):
             score += 2
+
         if len(text) > 20:
             score += 1
 
@@ -115,7 +130,11 @@ def extract_list_metadata(link, base_url):
             date_index = index
             break
 
-    link_title = link.get_text(" ", strip=True)
+    link_title = link.get_text(
+        " ",
+        strip=True,
+    )
+
     if link_title:
         title = link_title
 
@@ -126,30 +145,45 @@ def extract_list_metadata(link, base_url):
             or len(title) > 150
         ):
             if len(parts) > date_index + 1:
-                title = parts[date_index + 1]
+                title = parts[
+                    date_index + 1
+                ]
 
-        remaining = parts[date_index + 1:]
+        remaining = parts[
+            date_index + 1:
+        ]
 
         if title in remaining:
-            remaining = remaining[remaining.index(title) + 1:]
+            remaining = remaining[
+                remaining.index(title) + 1:
+            ]
         elif remaining:
             remaining = remaining[1:]
 
         description_parts = []
 
         for text in remaining:
-            if text in {title, date}:
+            if text in {
+                title,
+                date,
+            }:
                 continue
+
             if text not in description_parts:
                 description_parts.append(text)
 
-        description = " ".join(description_parts).strip()
+        description = " ".join(
+            description_parts
+        ).strip()
 
     return {
         "date": date,
         "title": title.strip(),
         "description": description,
-        "image_url": extract_image_url(best, base_url),
+        "image_url": extract_image_url(
+            best,
+            base_url,
+        ),
     }
 
 
@@ -159,14 +193,21 @@ def get_news_list(list_url, base_url):
         headers=HEADERS,
         timeout=30,
     )
+
     response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser",
+    )
 
     news = []
     found_ids = set()
 
-    for link in soup.find_all("a", href=True):
+    for link in soup.find_all(
+        "a",
+        href=True,
+    ):
         href = link["href"]
 
         match = re.search(
@@ -184,29 +225,46 @@ def get_news_list(list_url, base_url):
             continue
 
         found_ids.add(news_id)
-        metadata = extract_list_metadata(link, base_url)
+
+        metadata = extract_list_metadata(
+            link,
+            base_url,
+        )
 
         news.append(
             {
                 "id": news_id,
-                "url": urljoin(base_url, href),
+                "url": urljoin(
+                    base_url,
+                    href,
+                ),
                 "date": metadata["date"],
                 "title": (
                     metadata["title"]
                     or f"CABAL News #{news_id}"
                 ),
-                "description": metadata["description"],
-                "image_url": metadata["image_url"],
+                "description": metadata[
+                    "description"
+                ],
+                "image_url": metadata[
+                    "image_url"
+                ],
             }
         )
 
     news.sort(
-        key=lambda item: int(item["id"]),
+        key=lambda item: int(
+            item["id"]
+        ),
         reverse=True,
     )
 
     return news
 
+
+# =========================================================
+# STATE.JSON
+# =========================================================
 
 def load_official_ids():
     if not OFFICIAL_STATE_FILE.exists():
@@ -214,14 +272,25 @@ def load_official_ids():
 
     try:
         data = json.loads(
-            OFFICIAL_STATE_FILE.read_text(encoding="utf-8")
+            OFFICIAL_STATE_FILE.read_text(
+                encoding="utf-8"
+            )
         )
+
         return {
             str(news_id)
-            for news_id in data.get("seen_ids", [])
+            for news_id in data.get(
+                "seen_ids",
+                [],
+            )
         }
+
     except Exception as error:
-        print(f"Could not read state.json: {error}")
+        print(
+            f"Could not read "
+            f"state.json: {error}"
+        )
+
         return set()
 
 
@@ -235,10 +304,17 @@ def save_official_ids(ids):
     }
 
     OFFICIAL_STATE_FILE.write_text(
-        json.dumps(data, indent=2),
+        json.dumps(
+            data,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
+
+# =========================================================
+# LEAKS.JSON
+# =========================================================
 
 def load_leak_state():
     default_state = {
@@ -252,26 +328,41 @@ def load_leak_state():
 
     try:
         data = json.loads(
-            LEAK_STATE_FILE.read_text(encoding="utf-8")
+            LEAK_STATE_FILE.read_text(
+                encoding="utf-8"
+            )
         )
 
         return {
             "leak_ids": [
                 str(x)
-                for x in data.get("leak_ids", [])
+                for x in data.get(
+                    "leak_ids",
+                    [],
+                )
             ],
             "ignored_na_ids": [
                 str(x)
-                for x in data.get("ignored_na_ids", [])
+                for x in data.get(
+                    "ignored_na_ids",
+                    [],
+                )
             ],
             "pending_ids": [
                 str(x)
-                for x in data.get("pending_ids", [])
+                for x in data.get(
+                    "pending_ids",
+                    [],
+                )
             ],
         }
 
     except Exception as error:
-        print(f"Could not read leaks.json: {error}")
+        print(
+            f"Could not read "
+            f"leaks.json: {error}"
+        )
+
         return default_state
 
 
@@ -282,11 +373,13 @@ def save_leak_state(state):
             key=lambda x: int(x),
             reverse=True,
         )[:500],
+
         "ignored_na_ids": sorted(
             set(state["ignored_na_ids"]),
             key=lambda x: int(x),
             reverse=True,
         )[:500],
+
         "pending_ids": sorted(
             set(state["pending_ids"]),
             key=lambda x: int(x),
@@ -295,19 +388,37 @@ def save_leak_state(state):
     }
 
     LEAK_STATE_FILE.write_text(
-        json.dumps(data, indent=2),
+        json.dumps(
+            data,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
 
-def send_discord_embed(item, test=False, leak=False):
+# =========================================================
+# DISCORD
+# =========================================================
+
+def send_discord_embed(
+    item,
+    test=False,
+    leak=False,
+):
     if not WEBHOOK_URL:
         raise RuntimeError(
-            "DISCORD_WEBHOOK_URL is not configured."
+            "DISCORD_WEBHOOK_URL "
+            "is not configured."
         )
 
-    base_title = item.get("title") or "CABAL EU News"
-    news_id = str(item.get("id", "")).strip()
+    base_title = (
+        item.get("title")
+        or "CABAL EU News"
+    )
+
+    news_id = str(
+        item.get("id", "")
+    ).strip()
 
     title = (
         f"{base_title} - {news_id}"
@@ -317,8 +428,14 @@ def send_discord_embed(item, test=False, leak=False):
 
     url = item["url"]
     date = item.get("date", "")
-    description = item.get("description", "")
-    image_url = item.get("image_url", "")
+    description = item.get(
+        "description",
+        "",
+    )
+    image_url = item.get(
+        "image_url",
+        "",
+    )
 
     description_parts = []
 
@@ -328,22 +445,36 @@ def send_discord_embed(item, test=False, leak=False):
             "on the official EU News list**"
         )
     elif test:
-        description_parts.append("🧪 **TEST MESSAGE**")
+        description_parts.append(
+            "🧪 **TEST MESSAGE**"
+        )
 
     if date:
-        description_parts.append(f"📅 **{date}**")
+        description_parts.append(
+            f"📅 **{date}**"
+        )
 
     if description:
         if len(description) > 1200:
-            description = description[:1197] + "..."
-        description_parts.append(description)
+            description = (
+                description[:1197]
+                + "..."
+            )
+
+        description_parts.append(
+            description
+        )
 
     if leak:
         color = 15158332
-        footer = "CABAL EU News • LEAK"
+        footer = (
+            "CABAL EU News • LEAK"
+        )
     elif test:
         color = 16776960
-        footer = "CABAL EU News Monitor • TEST"
+        footer = (
+            "CABAL EU News Monitor • TEST"
+        )
     else:
         color = 16744192
         footer = "CABAL EU News"
@@ -352,18 +483,28 @@ def send_discord_embed(item, test=False, leak=False):
         "title": title,
         "url": url,
         "color": color,
-        "footer": {"text": footer},
+        "footer": {
+            "text": footer
+        },
     }
 
     if description_parts:
-        embed["description"] = "\n".join(description_parts)
+        embed["description"] = (
+            "\n".join(
+                description_parts
+            )
+        )
 
     if image_url:
-        embed["thumbnail"] = {"url": image_url}
+        embed["thumbnail"] = {
+            "url": image_url
+        }
 
     payload = {
         "username": "CABAL EU News",
-        "embeds": [embed],
+        "embeds": [
+            embed
+        ],
     }
 
     response = requests.post(
@@ -374,15 +515,21 @@ def send_discord_embed(item, test=False, leak=False):
 
     if response.status_code == 429:
         retry_after = float(
-            response.json().get("retry_after", 1)
+            response.json().get(
+                "retry_after",
+                1,
+            )
         )
 
         print(
             f"Discord rate limit. "
-            f"Retrying after {retry_after} seconds."
+            f"Retrying after "
+            f"{retry_after} seconds."
         )
 
-        time.sleep(retry_after)
+        time.sleep(
+            retry_after
+        )
 
         response = requests.post(
             WEBHOOK_URL,
@@ -398,18 +545,25 @@ def send_startup_message(latest):
         "username": "CABAL EU News",
         "embeds": [
             {
-                "title": "✅ CABAL EU News Monitor is active",
+                "title": (
+                    "✅ CABAL EU News "
+                    "Monitor is active"
+                ),
                 "description": (
-                    "The news monitor has been started successfully."
+                    "The news monitor has "
+                    "been started successfully."
                     "\n\n"
                     "Latest known EU article:\n"
-                    f"**{latest['title']} - {latest['id']}**\n"
-                    f"[Open article]({latest['url']})"
+                    f"**{latest['title']} "
+                    f"- {latest['id']}**\n"
+                    f"[Open article]"
+                    f"({latest['url']})"
                 ),
                 "color": 5763719,
                 "footer": {
                     "text": (
-                        "Future CABAL EU news will appear here "
+                        "Future CABAL EU news "
+                        "will appear here "
                         "automatically."
                     )
                 },
@@ -422,105 +576,168 @@ def send_startup_message(latest):
         json=payload,
         timeout=30,
     )
+
     response.raise_for_status()
 
 
-def populate_last_news(current_news, limit=10):
+# =========================================================
+# POPULATE
+# =========================================================
+
+def populate_last_news(
+    current_news,
+    limit=10,
+):
     items = current_news[:limit]
 
     print(
         f"Populating Discord with "
-        f"{len(items)} latest CABAL EU articles."
+        f"{len(items)} latest "
+        f"CABAL EU articles."
     )
 
     for item in reversed(items):
         print(
             f"Populate article: "
-            f"{item['id']} - {item['title']}"
+            f"{item['id']} - "
+            f"{item['title']}"
         )
 
         send_discord_embed(item)
         time.sleep(0.5)
 
     print(
-        f"Successfully populated Discord with "
+        f"Successfully populated "
+        f"Discord with "
         f"{len(items)} articles."
     )
 
+
+# =========================================================
+# OFFICIAL EU MONITOR
+# =========================================================
 
 def process_official_news(
     current_news,
     official_ids,
     leak_state,
 ):
-    leak_ids = set(leak_state["leak_ids"])
+    leak_ids = set(
+        leak_state["leak_ids"]
+    )
 
     if not OFFICIAL_STATE_FILE.exists():
         for item in current_news:
-            official_ids.add(item["id"])
+            official_ids.add(
+                item["id"]
+            )
 
-        save_official_ids(official_ids)
-        send_startup_message(current_news[0])
+        save_official_ids(
+            official_ids
+        )
+
+        send_startup_message(
+            current_news[0]
+        )
 
         print(
             f"Initial setup complete. "
-            f"Remembered {len(current_news)} official EU articles."
+            f"Remembered "
+            f"{len(current_news)} "
+            f"official EU articles."
         )
+
         return official_ids
 
     new_items = [
         item
         for item in current_news
-        if item["id"] not in official_ids
+        if item["id"]
+        not in official_ids
     ]
 
     if not new_items:
-        print("No new official CABAL EU news.")
+        print(
+            "No new official "
+            "CABAL EU news."
+        )
+
         return official_ids
 
     sent = 0
     promoted_leaks = 0
 
-    for item in reversed(new_items):
+    for item in reversed(
+        new_items
+    ):
         news_id = item["id"]
 
         if news_id in leak_ids:
             print(
-                f"EU leak {news_id} is now official: "
+                f"EU leak {news_id} "
+                f"is now official: "
                 f"{item['title']} - "
-                f"adding to state.json without reposting."
+                f"adding to state.json "
+                f"without reposting."
             )
+
             promoted_leaks += 1
+
         else:
             print(
                 f"New official EU article: "
-                f"{news_id} - {item['title']}"
+                f"{news_id} - "
+                f"{item['title']}"
             )
 
             send_discord_embed(item)
+
             sent += 1
             time.sleep(0.5)
 
-        official_ids.add(news_id)
+        official_ids.add(
+            news_id
+        )
 
     for item in current_news:
-        official_ids.add(item["id"])
+        official_ids.add(
+            item["id"]
+        )
 
-    save_official_ids(official_ids)
+    save_official_ids(
+        official_ids
+    )
 
     print(
         f"Official EU update complete: "
         f"sent {sent}, "
-        f"promoted leaks without reposting {promoted_leaks}."
+        f"promoted leaks without "
+        f"reposting {promoted_leaks}."
     )
 
     return official_ids
 
 
-def get_article_page(news_id):
+# =========================================================
+# ARTICLE PARSING
+# =========================================================
+
+def get_article_page(
+    news_id,
+    cache=None,
+):
+    str_id = str(news_id)
+
+    if (
+        cache is not None
+        and str_id in cache
+    ):
+        return cache[str_id]
+
     url = (
         f"{EU_BASE_URL}"
-        f"/en/all/Content/{news_id}"
+        f"/en/all/Content/"
+        f"{str_id}"
         f"?pageNum=1"
     )
 
@@ -531,24 +748,41 @@ def get_article_page(news_id):
             timeout=20,
             allow_redirects=True,
         )
+
     except requests.RequestException as error:
         print(
-            f"Leak candidate {news_id}: "
-            f"request failed: {error}"
+            f"Article {str_id}: "
+            f"request failed: "
+            f"{error}"
         )
+
+        if cache is not None:
+            cache[str_id] = None
+
         return None
 
     if response.status_code == 404:
+        if cache is not None:
+            cache[str_id] = None
         return None
 
     if response.status_code >= 400:
         print(
-            f"Leak candidate {news_id}: "
-            f"HTTP {response.status_code} - skipped"
+            f"Article {str_id}: "
+            f"HTTP "
+            f"{response.status_code} "
+            f"- skipped"
         )
+
+        if cache is not None:
+            cache[str_id] = None
+
         return None
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser",
+    )
 
     generic_titles = {
         "playthisgame",
@@ -558,24 +792,36 @@ def get_article_page(news_id):
 
     title_node = None
 
-    for heading in soup.find_all(["h1", "h2"]):
-        text = heading.get_text(" ", strip=True)
+    for heading in soup.find_all(
+        ["h1", "h2"]
+    ):
+        text = heading.get_text(
+            " ",
+            strip=True,
+        )
 
         if (
             text
-            and text.lower() not in generic_titles
+            and text.lower()
+            not in generic_titles
         ):
             title_node = heading
             break
 
     if title_node is None:
+        if cache is not None:
+            cache[str_id] = None
         return None
 
-    title = title_node.get_text(" ", strip=True)
+    title = title_node.get_text(
+        " ",
+        strip=True,
+    )
 
     date_pattern = re.compile(
         r"\d{1,2}/\d{1,2}/\d{4}"
-        r"(?:\s+\d{1,2}:\d{2}:\d{2}"
+        r"(?:\s+"
+        r"\d{1,2}:\d{2}:\d{2}"
         r"\s*(?:AM|PM)?)?",
         re.IGNORECASE,
     )
@@ -583,8 +829,14 @@ def get_article_page(news_id):
     date = ""
     body_parts = []
 
-    for node in title_node.find_all_next(string=True):
-        parent_name = getattr(node.parent, "name", "")
+    for node in title_node.find_all_next(
+        string=True
+    ):
+        parent_name = getattr(
+            node.parent,
+            "name",
+            "",
+        )
 
         if parent_name in {
             "script",
@@ -593,43 +845,66 @@ def get_article_page(news_id):
         }:
             continue
 
-        text = " ".join(str(node).split())
+        text = " ".join(
+            str(node).split()
+        )
 
         if not text:
             continue
 
-        if text.lower() == "view all news":
+        if (
+            text.lower()
+            == "view all news"
+        ):
             break
 
         if (
             not date
-            and date_pattern.fullmatch(text)
+            and date_pattern.fullmatch(
+                text
+            )
         ):
             date = text
             continue
 
         if (
             text == title
-            or text.lower() == "news"
+            or text.lower()
+            == "news"
         ):
             continue
 
         if text not in body_parts:
-            body_parts.append(text)
+            body_parts.append(
+                text
+            )
 
-    body = " ".join(body_parts).strip()
+    body = " ".join(
+        body_parts
+    ).strip()
 
-    if not date or len(body) < 10:
+    if (
+        not date
+        or len(body) < 10
+    ):
+        if cache is not None:
+            cache[str_id] = None
         return None
 
     image_url = ""
 
-    for image in title_node.find_all_next("img"):
+    for image in title_node.find_all_next(
+        "img"
+    ):
         image_src = (
             image.get("src")
             or image.get("data-src")
-            or image.get("data-original")
-            or image.get("data-lazy-src")
+            or image.get(
+                "data-original"
+            )
+            or image.get(
+                "data-lazy-src"
+            )
         )
 
         if image_src:
@@ -639,8 +914,8 @@ def get_article_page(news_id):
             )
             break
 
-    return {
-        "id": str(news_id),
+    article = {
+        "id": str_id,
         "url": url,
         "date": date,
         "title": title,
@@ -649,20 +924,41 @@ def get_article_page(news_id):
         "image_url": image_url,
     }
 
+    if cache is not None:
+        cache[str_id] = article
+
+    return article
+
+
+# =========================================================
+# LANGUAGE
+# =========================================================
 
 def detect_english(text):
-    cleaned = " ".join(text.split())
+    cleaned = " ".join(
+        text.split()
+    )
 
     if len(cleaned) < 40:
-        return False, "too little text"
+        return (
+            False,
+            "too little text",
+        )
 
     try:
-        results = detect_langs(cleaned)
+        results = detect_langs(
+            cleaned
+        )
+
     except LangDetectException:
-        return False, "language detection failed"
+        return (
+            False,
+            "language detection failed",
+        )
 
     summary = ", ".join(
-        f"{item.lang}:{item.prob:.2f}"
+        f"{item.lang}:"
+        f"{item.prob:.2f}"
         for item in results
     )
 
@@ -681,11 +977,20 @@ def detect_english(text):
     )
 
 
+# =========================================================
+# TITLE MATCHING
+# =========================================================
+
 def normalize_title(title):
-    text = title.lower().replace("’", "'")
+    text = (
+        title.lower()
+        .replace("’", "'")
+    )
 
     text = re.sub(
-        r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+        r"\b\d{1,2}[/-]"
+        r"\d{1,2}[/-]"
+        r"\d{2,4}\b",
         " ",
         text,
     )
@@ -696,12 +1001,21 @@ def normalize_title(title):
         text,
     )
 
-    return " ".join(text.split())
+    return " ".join(
+        text.split()
+    )
 
 
-def titles_match(title_a, title_b):
-    a = normalize_title(title_a)
-    b = normalize_title(title_b)
+def titles_match(
+    title_a,
+    title_b,
+):
+    a = normalize_title(
+        title_a
+    )
+    b = normalize_title(
+        title_b
+    )
 
     if not a or not b:
         return False
@@ -709,7 +1023,10 @@ def titles_match(title_a, title_b):
     if a == b:
         return True
 
-    if len(a) < 8 or len(b) < 8:
+    if (
+        len(a) < 8
+        or len(b) < 8
+    ):
         return False
 
     similarity = SequenceMatcher(
@@ -721,29 +1038,171 @@ def titles_match(title_a, title_b):
     return similarity >= 0.92
 
 
-def title_exists_in_list(
+def find_matching_items(
     candidate_id,
     candidate_title,
     news_list,
-    max_id_distance=30,
+    max_id_distance=TITLE_MAX_ID_DISTANCE,
 ):
-    candidate_id = int(candidate_id)
+    candidate_id = int(
+        candidate_id
+    )
+
+    matches = []
 
     for item in news_list:
-        item_id = int(item["id"])
+        item_id = int(
+            item["id"]
+        )
 
-        # Ignore old/unrelated articles with the same title.
-        if abs(item_id - candidate_id) > max_id_distance:
+        if (
+            abs(
+                item_id
+                - candidate_id
+            )
+            > max_id_distance
+        ):
             continue
 
         if titles_match(
             candidate_title,
             item["title"],
         ):
-            return True
+            matches.append(
+                item
+            )
 
-    return False
+    return matches
 
+
+# =========================================================
+# ECOIN COMPARISON
+# =========================================================
+
+def extract_ecoin_prices(text):
+    if not text:
+        return []
+
+    matches = re.findall(
+        r"(\d[\d,\.\s]*)"
+        r"\s*e\s*coins?\b",
+        text,
+        re.IGNORECASE,
+    )
+
+    prices = []
+
+    for raw_value in matches:
+        digits = re.sub(
+            r"[^\d]",
+            "",
+            raw_value,
+        )
+
+        if not digits:
+            continue
+
+        try:
+            prices.append(
+                int(digits)
+            )
+        except ValueError:
+            continue
+
+    return prices
+
+
+def compare_ecoin_prices(
+    article_a,
+    article_b,
+):
+    prices_a = sorted(
+        extract_ecoin_prices(
+            article_a.get(
+                "body",
+                "",
+            )
+        )
+    )
+
+    prices_b = sorted(
+        extract_ecoin_prices(
+            article_b.get(
+                "body",
+                "",
+            )
+        )
+    )
+
+    if (
+        not prices_a
+        or not prices_b
+    ):
+        return None
+
+    if len(prices_a) != len(
+        prices_b
+    ):
+        return None
+
+    a_not_lower = all(
+        a >= b
+        for a, b in zip(
+            prices_a,
+            prices_b,
+        )
+    )
+
+    b_not_lower = all(
+        b >= a
+        for a, b in zip(
+            prices_a,
+            prices_b,
+        )
+    )
+
+    a_strictly_higher = any(
+        a > b
+        for a, b in zip(
+            prices_a,
+            prices_b,
+        )
+    )
+
+    b_strictly_higher = any(
+        b > a
+        for a, b in zip(
+            prices_a,
+            prices_b,
+        )
+    )
+
+    if (
+        a_not_lower
+        and a_strictly_higher
+    ):
+        return (
+            "A_HIGHER",
+            prices_a,
+            prices_b,
+        )
+
+    if (
+        b_not_lower
+        and b_strictly_higher
+    ):
+        return (
+            "B_HIGHER",
+            prices_a,
+            prices_b,
+        )
+
+    return None
+
+
+# =========================================================
+# REGION SIGNALS
+# =========================================================
 
 def region_markers(text):
     upper = text.upper()
@@ -771,126 +1230,414 @@ def region_markers(text):
     eu_hits = [
         pattern
         for pattern in eu_patterns
-        if re.search(pattern, upper)
+        if re.search(
+            pattern,
+            upper,
+        )
     ]
 
     na_hits = [
         pattern
         for pattern in na_patterns
-        if re.search(pattern, upper)
+        if re.search(
+            pattern,
+            upper,
+        )
     ]
 
-    return eu_hits, na_hits
+    return (
+        eu_hits,
+        na_hits,
+    )
 
 
-def classify_region(
-    article,
+def add_score(
+    evidence,
+    news_id,
+    region,
+    points,
+    reason,
+):
+    bucket = evidence[
+        news_id
+    ]
+
+    bucket[
+        f"{region.lower()}_score"
+    ] += points
+
+    bucket["reasons"].append(
+        f"{region} +{points}: "
+        f"{reason}"
+    )
+
+
+def build_region_evidence(
+    candidates,
     eu_news,
     na_news,
-    eu_ids,
-    na_ids,
+    article_cache,
 ):
-    news_id = article["id"]
-    title = article["title"]
+    evidence = {
+        item["id"]: {
+            "eu_score": 0,
+            "na_score": 0,
+            "reasons": [],
+        }
+        for item in candidates
+    }
 
-    if news_id in eu_ids:
-        return (
-            "EU_OFFICIAL",
-            "ID is already present on EU /List",
+    candidate_by_id = {
+        item["id"]: item
+        for item in candidates
+    }
+
+    # -----------------------------------------
+    # 1. Regional markers inside article text.
+    # -----------------------------------------
+
+    for article in candidates:
+        news_id = article["id"]
+
+        text = (
+            f"{article['title']}\n"
+            f"{article['body']}"
         )
 
-    if news_id in na_ids:
-        return (
-            "NA",
-            "ID is present on NA /List",
+        eu_markers, na_markers = (
+            region_markers(text)
         )
 
-    in_eu_titles = title_exists_in_list(
-        news_id,
-        title,
-        eu_news,
+        if (
+            eu_markers
+            and not na_markers
+        ):
+            add_score(
+                evidence,
+                news_id,
+                "EU",
+                80,
+                "EU time/region marker",
+            )
+
+        if (
+            na_markers
+            and not eu_markers
+        ):
+            add_score(
+                evidence,
+                news_id,
+                "NA",
+                80,
+                "NA time/region marker",
+            )
+
+        if (
+            eu_markers
+            and na_markers
+        ):
+            evidence[
+                news_id
+            ]["reasons"].append(
+                "Conflicting EU/NA markers"
+            )
+
+    # -----------------------------------------
+    # 2. Candidate vs candidate:
+    # same title + eCoin price comparison.
+    #
+    # User-observed CABAL rule:
+    # EU eCoin prices are higher than NA.
+    # -----------------------------------------
+
+    candidate_ids = list(
+        candidate_by_id.keys()
     )
 
-    in_na_titles = title_exists_in_list(
-        news_id,
-        title,
-        na_news,
+    for index_a in range(
+        len(candidate_ids)
+    ):
+        for index_b in range(
+            index_a + 1,
+            len(candidate_ids),
+        ):
+            id_a = candidate_ids[
+                index_a
+            ]
+            id_b = candidate_ids[
+                index_b
+            ]
+
+            article_a = (
+                candidate_by_id[id_a]
+            )
+            article_b = (
+                candidate_by_id[id_b]
+            )
+
+            if (
+                abs(
+                    int(id_a)
+                    - int(id_b)
+                )
+                > TITLE_MAX_ID_DISTANCE
+            ):
+                continue
+
+            if not titles_match(
+                article_a["title"],
+                article_b["title"],
+            ):
+                continue
+
+            comparison = (
+                compare_ecoin_prices(
+                    article_a,
+                    article_b,
+                )
+            )
+
+            if not comparison:
+                continue
+
+            result, prices_a, prices_b = (
+                comparison
+            )
+
+            if result == "A_HIGHER":
+                add_score(
+                    evidence,
+                    id_a,
+                    "EU",
+                    120,
+                    (
+                        f"same-title candidate {id_b} "
+                        f"has lower eCoin prices "
+                        f"{prices_b}; this article "
+                        f"has {prices_a}"
+                    ),
+                )
+
+                add_score(
+                    evidence,
+                    id_b,
+                    "NA",
+                    120,
+                    (
+                        f"same-title candidate {id_a} "
+                        f"has higher eCoin prices "
+                        f"{prices_a}; this article "
+                        f"has {prices_b}"
+                    ),
+                )
+
+            elif result == "B_HIGHER":
+                add_score(
+                    evidence,
+                    id_b,
+                    "EU",
+                    120,
+                    (
+                        f"same-title candidate {id_a} "
+                        f"has lower eCoin prices "
+                        f"{prices_a}; this article "
+                        f"has {prices_b}"
+                    ),
+                )
+
+                add_score(
+                    evidence,
+                    id_a,
+                    "NA",
+                    120,
+                    (
+                        f"same-title candidate {id_b} "
+                        f"has higher eCoin prices "
+                        f"{prices_b}; this article "
+                        f"has {prices_a}"
+                    ),
+                )
+
+    # -----------------------------------------
+    # 3. Compare candidate to recent official
+    # matching titles from EU and NA lists.
+    # -----------------------------------------
+
+    for article in candidates:
+        news_id = article["id"]
+
+        eu_matches = find_matching_items(
+            news_id,
+            article["title"],
+            eu_news,
+        )
+
+        na_matches = find_matching_items(
+            news_id,
+            article["title"],
+            na_news,
+        )
+
+        # Title alone is only a weak hint.
+        if (
+            na_matches
+            and not eu_matches
+        ):
+            add_score(
+                evidence,
+                news_id,
+                "EU",
+                40,
+                "matching recent title exists on NA /List",
+            )
+
+        if (
+            eu_matches
+            and not na_matches
+        ):
+            add_score(
+                evidence,
+                news_id,
+                "NA",
+                40,
+                "matching recent title exists on EU /List",
+            )
+
+        # Stronger: compare actual eCoin prices
+        # against a known official region.
+        for match in na_matches:
+            official_na_article = (
+                get_article_page(
+                    match["id"],
+                    cache=article_cache,
+                )
+            )
+
+            if not official_na_article:
+                continue
+
+            comparison = (
+                compare_ecoin_prices(
+                    article,
+                    official_na_article,
+                )
+            )
+
+            if not comparison:
+                continue
+
+            result, candidate_prices, na_prices = (
+                comparison
+            )
+
+            if result == "A_HIGHER":
+                add_score(
+                    evidence,
+                    news_id,
+                    "EU",
+                    120,
+                    (
+                        f"higher eCoin prices "
+                        f"{candidate_prices} than "
+                        f"official NA {match['id']} "
+                        f"{na_prices}"
+                    ),
+                )
+
+        for match in eu_matches:
+            official_eu_article = (
+                get_article_page(
+                    match["id"],
+                    cache=article_cache,
+                )
+            )
+
+            if not official_eu_article:
+                continue
+
+            comparison = (
+                compare_ecoin_prices(
+                    article,
+                    official_eu_article,
+                )
+            )
+
+            if not comparison:
+                continue
+
+            result, candidate_prices, eu_prices = (
+                comparison
+            )
+
+            if result == "B_HIGHER":
+                add_score(
+                    evidence,
+                    news_id,
+                    "NA",
+                    120,
+                    (
+                        f"lower eCoin prices "
+                        f"{candidate_prices} than "
+                        f"official EU {match['id']} "
+                        f"{eu_prices}"
+                    ),
+                )
+
+    return evidence
+
+
+def decide_region(
+    evidence_entry,
+):
+    eu_score = evidence_entry[
+        "eu_score"
+    ]
+    na_score = evidence_entry[
+        "na_score"
+    ]
+
+    reasons = evidence_entry[
+        "reasons"
+    ]
+
+    reason_text = (
+        "; ".join(reasons)
+        if reasons
+        else "no reliable regional signal"
     )
 
-    text = (
-        f"{article['title']}\n"
-        f"{article['body']}"
-    )
-
-    eu_markers, na_markers = region_markers(text)
-
-    eu_score = 0
-    na_score = 0
-    reasons = []
-
-    if in_na_titles and not in_eu_titles:
-        eu_score += 80
-        reasons.append(
-            "matching title already exists on NA /List"
-        )
-
-    if in_eu_titles and not in_na_titles:
-        na_score += 80
-        reasons.append(
-            "matching title already exists on EU /List"
-        )
-
-    if eu_markers and not na_markers:
-        eu_score += 60
-        reasons.append(
-            "EU time/region marker found"
-        )
-
-    if na_markers and not eu_markers:
-        na_score += 60
-        reasons.append(
-            "NA time/region marker found"
-        )
-
-    if eu_markers and na_markers:
-        reasons.append(
-            "conflicting EU and NA markers"
-        )
-
+    # Strong enough signal and clear lead.
     if (
-        eu_score >= 60
-        and eu_score - na_score >= 30
+        eu_score >= 80
+        and eu_score - na_score >= 40
     ):
         return (
             "EU",
-            "; ".join(reasons)
-            or f"EU score {eu_score}",
+            reason_text,
         )
 
     if (
-        na_score >= 60
-        and na_score - eu_score >= 30
+        na_score >= 80
+        and na_score - eu_score >= 40
     ):
         return (
             "NA",
-            "; ".join(reasons)
-            or f"NA score {na_score}",
-        )
-
-    if in_eu_titles and in_na_titles:
-        reasons.append(
-            "matching title already exists on both lists"
+            reason_text,
         )
 
     return (
         "UNKNOWN",
-        "; ".join(reasons)
-        or (
-            f"no reliable regional signal "
-            f"(EU score {eu_score}, NA score {na_score})"
+        (
+            f"{reason_text}; "
+            f"EU={eu_score}, "
+            f"NA={na_score}"
         ),
     )
 
+
+# =========================================================
+# LEAK SCANNER
+# =========================================================
 
 def scan_for_leaks(
     eu_news,
@@ -899,12 +1646,18 @@ def scan_for_leaks(
     leak_state,
 ):
     if not LEAK_STATE_FILE.exists():
-        save_leak_state(leak_state)
+        save_leak_state(
+            leak_state
+        )
 
-    leak_ids = set(leak_state["leak_ids"])
+    leak_ids = set(
+        leak_state["leak_ids"]
+    )
+
     ignored_na_ids = set(
         leak_state["ignored_na_ids"]
     )
+
     pending_ids = set(
         leak_state["pending_ids"]
     )
@@ -913,6 +1666,7 @@ def scan_for_leaks(
         item["id"]
         for item in eu_news
     }
+
     na_ids = {
         item["id"]
         for item in na_news
@@ -922,14 +1676,21 @@ def scan_for_leaks(
         int(news_id)
         for news_id in eu_ids
     )
+
     highest_na_id = max(
         int(news_id)
         for news_id in na_ids
     )
 
-    start_id = highest_eu_id + 1
+    start_id = (
+        highest_eu_id + 1
+    )
+
     end_id = (
-        max(highest_eu_id, highest_na_id)
+        max(
+            highest_eu_id,
+            highest_na_id,
+        )
         + LEAK_LOOKAHEAD
     )
 
@@ -937,37 +1698,70 @@ def scan_for_leaks(
         f"Leak scan: "
         f"EU latest={highest_eu_id}, "
         f"NA latest={highest_na_id}, "
-        f"checking {start_id} -> {end_id}"
+        f"checking "
+        f"{start_id} -> {end_id}"
     )
 
-    found = 0
+    article_cache = {}
+    candidates = []
 
-    for news_id in range(start_id, end_id + 1):
-        str_id = str(news_id)
+    # -----------------------------------------
+    # Phase 1:
+    # collect existing English unpublished
+    # candidate pages.
+    # -----------------------------------------
+
+    for news_id in range(
+        start_id,
+        end_id + 1,
+    ):
+        str_id = str(
+            news_id
+        )
 
         if str_id in official_ids:
-            pending_ids.discard(str_id)
+            pending_ids.discard(
+                str_id
+            )
             continue
 
         if str_id in leak_ids:
             continue
 
         if str_id in na_ids:
-            ignored_na_ids.add(str_id)
-            pending_ids.discard(str_id)
+            ignored_na_ids.add(
+                str_id
+            )
+
+            pending_ids.discard(
+                str_id
+            )
 
             print(
-                f"{news_id}: NA official - ignored"
+                f"{news_id}: "
+                f"NA official - ignored"
             )
+
             continue
 
-        article = get_article_page(news_id)
+        # Already confirmed as NA by an earlier
+        # strong classification.
+        if str_id in ignored_na_ids:
+            continue
+
+        article = get_article_page(
+            news_id,
+            cache=article_cache,
+        )
 
         if not article:
-            pending_ids.discard(str_id)
+            pending_ids.discard(
+                str_id
+            )
 
             print(
-                f"{news_id}: no valid article"
+                f"{news_id}: "
+                f"no valid article"
             )
 
             time.sleep(0.20)
@@ -978,27 +1772,73 @@ def scan_for_leaks(
             f"{article['body']}"
         )
 
-        is_english, language_info = detect_english(
+        (
+            is_english,
+            language_info,
+        ) = detect_english(
             language_text
         )
 
         if not is_english:
-            pending_ids.discard(str_id)
+            pending_ids.discard(
+                str_id
+            )
 
             print(
-                f"{news_id}: non-English "
-                f"({language_info}) - ignored"
+                f"{news_id}: "
+                f"non-English "
+                f"({language_info}) "
+                f"- ignored"
             )
 
             time.sleep(0.20)
             continue
 
-        region, reason = classify_region(
-            article,
-            eu_news,
-            na_news,
-            eu_ids,
-            na_ids,
+        article[
+            "_language_info"
+        ] = language_info
+
+        candidates.append(
+            article
+        )
+
+        time.sleep(0.15)
+
+    print(
+        f"English unpublished "
+        f"candidates collected: "
+        f"{len(candidates)}"
+    )
+
+    # -----------------------------------------
+    # Phase 2:
+    # compare candidates as a group.
+    # -----------------------------------------
+
+    evidence = build_region_evidence(
+        candidates,
+        eu_news,
+        na_news,
+        article_cache,
+    )
+
+    found = 0
+
+    for article in sorted(
+        candidates,
+        key=lambda item: int(
+            item["id"]
+        ),
+    ):
+        news_id = article["id"]
+
+        region, reason = decide_region(
+            evidence[news_id]
+        )
+
+        language_info = article.get(
+            "_language_info",
+            "",
         )
 
         if region == "EU":
@@ -1015,72 +1855,95 @@ def scan_for_leaks(
                 leak=True,
             )
 
-            leak_ids.add(str_id)
-            pending_ids.discard(str_id)
-            ignored_na_ids.discard(str_id)
+            leak_ids.add(
+                news_id
+            )
+
+            pending_ids.discard(
+                news_id
+            )
+
+            ignored_na_ids.discard(
+                news_id
+            )
 
             found += 1
-
-            leak_state["leak_ids"] = list(leak_ids)
-            leak_state["ignored_na_ids"] = list(
-                ignored_na_ids
-            )
-            leak_state["pending_ids"] = list(
-                pending_ids
-            )
-
-            save_leak_state(leak_state)
-
             time.sleep(0.5)
-            continue
 
-        if region == "NA":
+        elif region == "NA":
             print(
-                f"{news_id}: NA candidate - "
-                f"not posted [{reason}]"
+                f"{news_id}: "
+                f"NA candidate - ignored "
+                f"[{reason}]"
             )
 
-            pending_ids.add(str_id)
-            time.sleep(0.20)
-            continue
+            ignored_na_ids.add(
+                news_id
+            )
 
-        if region == "EU_OFFICIAL":
-            pending_ids.discard(str_id)
-            continue
+            pending_ids.discard(
+                news_id
+            )
 
-        print(
-            f"{news_id}: UNKNOWN region - pending "
-            f"[{reason}]"
-        )
+        else:
+            print(
+                f"{news_id}: "
+                f"UNKNOWN region - pending "
+                f"[{reason}]"
+            )
 
-        pending_ids.add(str_id)
-        time.sleep(0.20)
+            pending_ids.add(
+                news_id
+            )
 
+    # Clean up IDs that have since become official.
     for news_id in na_ids:
         if news_id in pending_ids:
-            pending_ids.discard(news_id)
-            ignored_na_ids.add(news_id)
+            pending_ids.discard(
+                news_id
+            )
+            ignored_na_ids.add(
+                news_id
+            )
 
     for news_id in eu_ids:
-        pending_ids.discard(news_id)
+        pending_ids.discard(
+            news_id
+        )
 
-    leak_state["leak_ids"] = list(leak_ids)
-    leak_state["ignored_na_ids"] = list(
+    leak_state["leak_ids"] = list(
+        leak_ids
+    )
+
+    leak_state[
+        "ignored_na_ids"
+    ] = list(
         ignored_na_ids
     )
-    leak_state["pending_ids"] = list(
+
+    leak_state[
+        "pending_ids"
+    ] = list(
         pending_ids
     )
 
-    save_leak_state(leak_state)
+    save_leak_state(
+        leak_state
+    )
 
     print(
         f"Leak scan complete. "
         f"New EU leaks: {found}. "
-        f"Pending: {len(pending_ids)}. "
-        f"Known NA ignored: {len(ignored_na_ids)}."
+        f"Pending: "
+        f"{len(pending_ids)}. "
+        f"Known NA ignored: "
+        f"{len(ignored_na_ids)}."
     )
 
+
+# =========================================================
+# MAIN
+# =========================================================
 
 def main():
     if not WEBHOOK_URL:
@@ -1089,10 +1952,15 @@ def main():
             "DISCORD_WEBHOOK_URL"
         )
 
-    if TEST_MESSAGE and POPULATE_LAST_10:
+    if (
+        TEST_MESSAGE
+        and POPULATE_LAST_10
+    ):
         raise RuntimeError(
-            "Select either TEST_MESSAGE "
-            "or POPULATE_LAST_10, not both."
+            "Select either "
+            "TEST_MESSAGE or "
+            "POPULATE_LAST_10, "
+            "not both."
         )
 
     eu_news = get_news_list(
@@ -1102,13 +1970,18 @@ def main():
 
     if not eu_news:
         raise RuntimeError(
-            "No CABAL EU news entries found. "
-            "The EU website structure may have changed."
+            "No CABAL EU news entries "
+            "found. "
+            "The EU website structure "
+            "may have changed."
         )
 
     print(
-        f"Found {len(eu_news)} official EU entries. "
-        f"Latest EU ID: {eu_news[0]['id']}"
+        f"Found "
+        f"{len(eu_news)} "
+        f"official EU entries. "
+        f"Latest EU ID: "
+        f"{eu_news[0]['id']}"
     )
 
     if TEST_MESSAGE:
@@ -1116,7 +1989,8 @@ def main():
 
         print(
             f"Sending TEST message: "
-            f"{latest['id']} - {latest['title']}"
+            f"{latest['id']} - "
+            f"{latest['title']}"
         )
 
         send_discord_embed(
@@ -1125,8 +1999,10 @@ def main():
         )
 
         print(
-            "Test message sent successfully."
+            "Test message sent "
+            "successfully."
         )
+
         return
 
     if POPULATE_LAST_10:
@@ -1134,15 +2010,23 @@ def main():
             eu_news,
             limit=10,
         )
+
         return
 
-    official_ids = load_official_ids()
-    leak_state = load_leak_state()
+    official_ids = (
+        load_official_ids()
+    )
 
-    official_ids = process_official_news(
-        eu_news,
-        official_ids,
-        leak_state,
+    leak_state = (
+        load_leak_state()
+    )
+
+    official_ids = (
+        process_official_news(
+            eu_news,
+            official_ids,
+            leak_state,
+        )
     )
 
     if RUN_LEAK_SCAN:
@@ -1153,14 +2037,19 @@ def main():
 
         if not na_news:
             raise RuntimeError(
-                "Leak scan requested, but no NA news "
-                "entries were found. "
-                "The NA website structure may have changed."
+                "Leak scan requested, "
+                "but no NA news entries "
+                "were found. "
+                "The NA website structure "
+                "may have changed."
             )
 
         print(
-            f"Found {len(na_news)} official NA entries. "
-            f"Latest NA ID: {na_news[0]['id']}"
+            f"Found "
+            f"{len(na_news)} "
+            f"official NA entries. "
+            f"Latest NA ID: "
+            f"{na_news[0]['id']}"
         )
 
         scan_for_leaks(
