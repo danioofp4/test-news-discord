@@ -13,7 +13,9 @@ BASE_URL = "https://cabaleu.playthisgame.com"
 STATE_FILE = Path("state.json")
 
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-
+TEST_MESSAGE = os.environ.get(
+    "TEST_MESSAGE", ""
+).lower() in {"1", "true", "yes", "on"}
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
