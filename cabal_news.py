@@ -17,13 +17,9 @@ BASE_URL = "https://cabaleu.playthisgame.com"
 OFFICIAL_STATE_FILE = Path("state.json")
 LEAK_STATE_FILE = Path("leaks.json")
 
-# Ile ID ponad najwyższe oficjalne ID sprawdzamy.
 LEAK_LOOKAHEAD = 20
 
-
-WEBHOOK_URL = os.environ.get(
-    "DISCORD_WEBHOOK_URL"
-)
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
 TEST_MESSAGE = os.environ.get(
     "TEST_MESSAGE",
@@ -55,7 +51,6 @@ RUN_LEAK_SCAN = os.environ.get(
     "on",
 }
 
-
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 "
@@ -65,14 +60,8 @@ HEADERS = {
     )
 }
 
-
-# Dzięki temu langdetect daje powtarzalne wyniki.
 DetectorFactory.seed = 0
 
-
-# =========================================================
-# LISTA OFICJALNYCH NEWSÓW
-# =========================================================
 
 def extract_image_url(element):
     image = element.find("img")
@@ -90,10 +79,7 @@ def extract_image_url(element):
     if not image_src:
         return ""
 
-    return urljoin(
-        BASE_URL,
-        image_src,
-    )
+    return urljoin(BASE_URL, image_src)
 
 
 def extract_list_metadata(link):
@@ -102,7 +88,6 @@ def extract_list_metadata(link):
     )
 
     candidates = [link]
-
     parent = link.parent
 
     for _ in range(6):
@@ -148,7 +133,6 @@ def extract_list_metadata(link):
     date = ""
     title = ""
     description = ""
-
     date_index = None
 
     for index, text in enumerate(parts):
@@ -166,16 +150,13 @@ def extract_list_metadata(link):
         title = link_title
 
     if date_index is not None:
-
         if (
             not title
             or date_pattern.search(title)
             or len(title) > 150
         ):
             if len(parts) > date_index + 1:
-                title = parts[
-                    date_index + 1
-                ]
+                title = parts[date_index + 1]
 
         remaining = parts[
             date_index + 1:
@@ -185,14 +166,12 @@ def extract_list_metadata(link):
             remaining = remaining[
                 remaining.index(title) + 1:
             ]
-
         elif remaining:
             remaining = remaining[1:]
 
         description_parts = []
 
         for text in remaining:
-
             if text in {
                 title,
                 date,
@@ -200,9 +179,7 @@ def extract_list_metadata(link):
                 continue
 
             if text not in description_parts:
-                description_parts.append(
-                    text
-                )
+                description_parts.append(text)
 
         description = " ".join(
             description_parts
@@ -212,14 +189,11 @@ def extract_list_metadata(link):
         "date": date,
         "title": title.strip(),
         "description": description,
-        "image_url": extract_image_url(
-            best
-        ),
+        "image_url": extract_image_url(best),
     }
 
 
 def get_news_list():
-
     response = requests.get(
         LIST_URL,
         headers=HEADERS,
@@ -240,7 +214,6 @@ def get_news_list():
         "a",
         href=True,
     ):
-
         href = link["href"]
 
         match = re.search(
@@ -257,9 +230,7 @@ def get_news_list():
         if news_id in found_ids:
             continue
 
-        found_ids.add(
-            news_id
-        )
+        found_ids.add(news_id)
 
         metadata = extract_list_metadata(
             link
@@ -273,42 +244,25 @@ def get_news_list():
         news.append(
             {
                 "id": news_id,
-
                 "url": urljoin(
                     BASE_URL,
                     href,
                 ),
-
-                "date": metadata[
-                    "date"
-                ],
-
+                "date": metadata["date"],
                 "title": title,
-
-                "description": metadata[
-                    "description"
-                ],
-
-                "image_url": metadata[
-                    "image_url"
-                ],
+                "description": metadata["description"],
+                "image_url": metadata["image_url"],
             }
         )
 
     return news
 
 
-# =========================================================
-# STATE.JSON — TYLKO OFICJALNE NEWSY
-# =========================================================
-
 def load_official_ids():
-
     if not OFFICIAL_STATE_FILE.exists():
         return set()
 
     try:
-
         data = json.loads(
             OFFICIAL_STATE_FILE.read_text(
                 encoding="utf-8"
@@ -317,15 +271,13 @@ def load_official_ids():
 
         return {
             str(news_id)
-            for news_id
-            in data.get(
+            for news_id in data.get(
                 "seen_ids",
                 [],
             )
         }
 
     except Exception as error:
-
         print(
             f"Could not read "
             f"state.json: {error}"
@@ -335,7 +287,6 @@ def load_official_ids():
 
 
 def save_official_ids(ids):
-
     data = {
         "seen_ids": sorted(
             ids,
@@ -353,17 +304,11 @@ def save_official_ids(ids):
     )
 
 
-# =========================================================
-# LEAKS.JSON — TYLKO WYKRYTE LEAKI
-# =========================================================
-
 def load_leak_ids():
-
     if not LEAK_STATE_FILE.exists():
         return set()
 
     try:
-
         data = json.loads(
             LEAK_STATE_FILE.read_text(
                 encoding="utf-8"
@@ -372,15 +317,13 @@ def load_leak_ids():
 
         return {
             str(news_id)
-            for news_id
-            in data.get(
+            for news_id in data.get(
                 "leak_ids",
                 [],
             )
         }
 
     except Exception as error:
-
         print(
             f"Could not read "
             f"leaks.json: {error}"
@@ -390,7 +333,6 @@ def load_leak_ids():
 
 
 def save_leak_ids(ids):
-
     data = {
         "leak_ids": sorted(
             ids,
@@ -408,25 +350,30 @@ def save_leak_ids(ids):
     )
 
 
-# =========================================================
-# DISCORD
-# =========================================================
-
 def send_discord_embed(
     item,
     test=False,
     leak=False,
 ):
-
     if not WEBHOOK_URL:
         raise RuntimeError(
             "DISCORD_WEBHOOK_URL "
             "is not configured."
         )
 
-    title = (
+    base_title = (
         item.get("title")
         or "CABAL EU News"
+    )
+
+    news_id = str(
+        item.get("id", "")
+    ).strip()
+
+    title = (
+        f"{base_title} - {news_id}"
+        if news_id
+        else base_title
     )
 
     url = item["url"]
@@ -449,26 +396,21 @@ def send_discord_embed(
     description_parts = []
 
     if leak:
-
         description_parts.append(
             "🚨 **LEAK — not yet visible "
             "on the official News list**"
         )
-
     elif test:
-
         description_parts.append(
             "🧪 **TEST MESSAGE**"
         )
 
     if date:
-
         description_parts.append(
             f"📅 **{date}**"
         )
 
     if description:
-
         if len(description) > 1200:
             description = (
                 description[:1197]
@@ -480,25 +422,13 @@ def send_discord_embed(
         )
 
     if leak:
-
         color = 15158332
-
-        footer = (
-            "CABAL EU News • LEAK"
-        )
-
+        footer = "CABAL EU News • LEAK"
     elif test:
-
         color = 16776960
-
-        footer = (
-            "CABAL EU News Monitor • TEST"
-        )
-
+        footer = "CABAL EU News Monitor • TEST"
     else:
-
         color = 16744192
-
         footer = "CABAL EU News"
 
     embed = {
@@ -511,7 +441,6 @@ def send_discord_embed(
     }
 
     if description_parts:
-
         embed["description"] = (
             "\n".join(
                 description_parts
@@ -519,7 +448,6 @@ def send_discord_embed(
         )
 
     if image_url:
-
         embed["thumbnail"] = {
             "url": image_url
         }
@@ -538,7 +466,6 @@ def send_discord_embed(
     )
 
     if response.status_code == 429:
-
         retry_after = float(
             response.json().get(
                 "retry_after",
@@ -568,30 +495,25 @@ def send_discord_embed(
 def send_startup_message(
     latest,
 ):
-
     payload = {
-
         "username": "CABAL EU News",
-
         "embeds": [
             {
                 "title": (
                     "✅ CABAL EU News "
                     "Monitor is active"
                 ),
-
                 "description": (
                     "The news monitor has "
                     "been started successfully."
                     "\n\n"
                     "Latest known article:\n"
-                    f"**{latest['title']}**\n"
+                    f"**{latest['title']} "
+                    f"- {latest['id']}**\n"
                     f"[Open article]"
                     f"({latest['url']})"
                 ),
-
                 "color": 5763719,
-
                 "footer": {
                     "text": (
                         "Future CABAL EU news "
@@ -612,15 +534,10 @@ def send_startup_message(
     response.raise_for_status()
 
 
-# =========================================================
-# POPULATE LAST 10
-# =========================================================
-
 def populate_last_news(
     current_news,
     limit=10,
 ):
-
     items = current_news[:limit]
 
     print(
@@ -630,7 +547,6 @@ def populate_last_news(
     )
 
     for item in reversed(items):
-
         print(
             f"Populate article: "
             f"{item['id']} - "
@@ -650,23 +566,16 @@ def populate_last_news(
     )
 
 
-# =========================================================
-# NORMALNY MONITOR /LIST
-# =========================================================
-
 def process_official_news(
     current_news,
     official_ids,
     leak_ids,
 ):
-
     state_existed = (
         OFFICIAL_STATE_FILE.exists()
     )
 
-    # Pierwszy start.
     if not state_existed:
-
         for item in current_news:
             official_ids.add(
                 item["id"]
@@ -697,7 +606,6 @@ def process_official_news(
     ]
 
     if not new_items:
-
         print(
             "No new official "
             "CABAL EU news."
@@ -711,13 +619,9 @@ def process_official_news(
     for item in reversed(
         new_items
     ):
-
         news_id = item["id"]
 
-        # Był wcześniej leak.
-        # Teraz pojawił się oficjalnie.
         if news_id in leak_ids:
-
             print(
                 f"Leak {news_id} "
                 f"is now official: "
@@ -727,9 +631,7 @@ def process_official_news(
             )
 
             promoted_leaks += 1
-
         else:
-
             print(
                 f"New official article: "
                 f"{news_id} - "
@@ -744,15 +646,11 @@ def process_official_news(
 
             time.sleep(0.5)
 
-        # Oficjalny news zawsze trafia
-        # do state.json.
         official_ids.add(
             news_id
         )
 
-    # state.json = oficjalne newsy z List.
     for item in current_news:
-
         official_ids.add(
             item["id"]
         )
@@ -771,14 +669,9 @@ def process_official_news(
     return official_ids
 
 
-# =========================================================
-# POBIERANIE UKRYTEGO ARTYKUŁU
-# =========================================================
-
 def get_article_page(
     news_id,
 ):
-
     url = (
         f"{BASE_URL}"
         f"/en/all/Content/"
@@ -787,7 +680,6 @@ def get_article_page(
     )
 
     try:
-
         response = requests.get(
             url,
             headers=HEADERS,
@@ -796,7 +688,6 @@ def get_article_page(
         )
 
     except requests.RequestException as error:
-
         print(
             f"Leak candidate "
             f"{news_id}: "
@@ -810,7 +701,6 @@ def get_article_page(
         return None
 
     if response.status_code >= 400:
-
         print(
             f"Leak candidate "
             f"{news_id}: "
@@ -826,10 +716,6 @@ def get_article_page(
         "html.parser",
     )
 
-    # Strona ma również H1:
-    # PlayThisGame
-    # Cabal
-    # dlatego je ignorujemy.
     generic_titles = {
         "playthisgame",
         "cabal",
@@ -841,7 +727,6 @@ def get_article_page(
     for heading in soup.find_all(
         "h1"
     ):
-
         text = heading.get_text(
             " ",
             strip=True,
@@ -880,13 +765,9 @@ def get_article_page(
     date = ""
     body_parts = []
 
-    # Czytamy tylko zawartość
-    # od nagłówka artykułu do
-    # "View All News".
     for node in title_node.find_all_next(
         string=True
     ):
-
         parent_name = getattr(
             node.parent,
             "name",
@@ -919,7 +800,6 @@ def get_article_page(
                 text
             )
         ):
-
             date = text
             continue
 
@@ -931,7 +811,6 @@ def get_article_page(
             continue
 
         if text not in body_parts:
-
             body_parts.append(
                 text
             )
@@ -940,7 +819,6 @@ def get_article_page(
         body_parts
     ).strip()
 
-    # Odrzucamy puste/placeholderowe strony.
     if (
         not date
         or len(body) < 10
@@ -949,12 +827,9 @@ def get_article_page(
 
     image_url = ""
 
-    # Pierwszy obrazek po tytule
-    # powinien być grafiką artykułu.
     for image in title_node.find_all_next(
         "img"
     ):
-
         image_src = (
             image.get("src")
             or image.get("data-src")
@@ -967,7 +842,6 @@ def get_article_page(
         )
 
         if image_src:
-
             image_url = urljoin(
                 BASE_URL,
                 image_src,
@@ -977,50 +851,34 @@ def get_article_page(
 
     return {
         "id": str(news_id),
-
         "url": url,
-
         "date": date,
-
         "title": title,
-
         "description": body,
-
         "body": body,
-
         "image_url": image_url,
     }
 
 
-# =========================================================
-# DETEKCJA JĘZYKA
-# =========================================================
-
 def detect_english(
     text,
 ):
-
     cleaned = " ".join(
         text.split()
     )
 
-    # Za mało tekstu = nie ryzykujemy
-    # fałszywego LEAK-a.
     if len(cleaned) < 40:
-
         return (
             False,
             "too little text",
         )
 
     try:
-
         results = detect_langs(
             cleaned
         )
 
     except LangDetectException:
-
         return (
             False,
             "language detection failed",
@@ -1041,27 +899,18 @@ def detect_english(
         0.0,
     )
 
-    # Minimum 80% pewności.
     return (
         english_probability >= 0.80,
         summary,
     )
 
 
-# =========================================================
-# LEAK SCANNER
-# =========================================================
-
 def scan_for_leaks(
     current_news,
     official_ids,
     leak_ids,
 ):
-
-    # Utwórz leaks.json nawet,
-    # jeśli jeszcze nic nie znaleziono.
     if not LEAK_STATE_FILE.exists():
-
         save_leak_ids(
             leak_ids
         )
@@ -1096,16 +945,13 @@ def scan_for_leaks(
         start_id,
         end_id + 1,
     ):
-
         str_id = str(
             news_id
         )
 
-        # Już oficjalny.
         if str_id in official_ids:
             continue
 
-        # Już wcześniej znaleziony leak.
         if str_id in leak_ids:
             continue
 
@@ -1114,7 +960,6 @@ def scan_for_leaks(
         )
 
         if not article:
-
             print(
                 f"Leak candidate "
                 f"{news_id}: "
@@ -1138,7 +983,6 @@ def scan_for_leaks(
         )
 
         if not is_english:
-
             print(
                 f"Leak candidate "
                 f"{news_id}: "
@@ -1164,14 +1008,10 @@ def scan_for_leaks(
             leak=True,
         )
 
-        # Tylko leaks.json.
         leak_ids.add(
             str_id
         )
 
-        # Zapisujemy od razu,
-        # żeby po błędzie kolejnego ID
-        # nie wysłać leaka ponownie.
         save_leak_ids(
             leak_ids
         )
@@ -1189,14 +1029,8 @@ def scan_for_leaks(
     return leak_ids
 
 
-# =========================================================
-# MAIN
-# =========================================================
-
 def main():
-
     if not WEBHOOK_URL:
-
         raise RuntimeError(
             "Missing GitHub secret: "
             "DISCORD_WEBHOOK_URL"
@@ -1206,7 +1040,6 @@ def main():
         TEST_MESSAGE
         and POPULATE_LAST_10
     ):
-
         raise RuntimeError(
             "Select either "
             "TEST_MESSAGE or "
@@ -1217,7 +1050,6 @@ def main():
     current_news = get_news_list()
 
     if not current_news:
-
         raise RuntimeError(
             "No CABAL news entries "
             "found. "
@@ -1234,12 +1066,7 @@ def main():
         f"{current_news[0]['id']}"
     )
 
-    # ---------------------------------
-    # TEST
-    # ---------------------------------
-
     if TEST_MESSAGE:
-
         latest = current_news[0]
 
         print(
@@ -1260,22 +1087,13 @@ def main():
 
         return
 
-    # ---------------------------------
-    # POPULATE LAST 10
-    # ---------------------------------
-
     if POPULATE_LAST_10:
-
         populate_last_news(
             current_news,
             limit=10,
         )
 
         return
-
-    # ---------------------------------
-    # NORMALNY MONITOR
-    # ---------------------------------
 
     official_ids = (
         load_official_ids()
@@ -1293,12 +1111,7 @@ def main():
         )
     )
 
-    # ---------------------------------
-    # LEAK SCANNER
-    # ---------------------------------
-
     if RUN_LEAK_SCAN:
-
         scan_for_leaks(
             current_news,
             official_ids,
