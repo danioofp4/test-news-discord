@@ -1802,6 +1802,16 @@ def scan_for_leaks(
             article
         )
 
+        prices = extract_ecoin_prices(
+            article["body"]
+        )
+
+        print(
+            f"{news_id}: English candidate | "
+            f"title='{article['title']}' | "
+            f"eCoins={prices}"
+        )
+
         time.sleep(0.15)
 
     print(
