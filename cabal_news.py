@@ -722,16 +722,27 @@ def titles_match(title_a, title_b):
 
 
 def title_exists_in_list(
+    candidate_id,
     candidate_title,
     news_list,
+    max_id_distance=30,
 ):
-    return any(
-        titles_match(
+    candidate_id = int(candidate_id)
+
+    for item in news_list:
+        item_id = int(item["id"])
+
+        # Ignore old/unrelated articles with the same title.
+        if abs(item_id - candidate_id) > max_id_distance:
+            continue
+
+        if titles_match(
             candidate_title,
             item["title"],
-        )
-        for item in news_list
-    )
+        ):
+            return True
+
+    return False
 
 
 def region_markers(text):
@@ -795,11 +806,13 @@ def classify_region(
         )
 
     in_eu_titles = title_exists_in_list(
+        news_id
         title,
         eu_news,
     )
 
     in_na_titles = title_exists_in_list(
+        news_id
         title,
         na_news,
     )
