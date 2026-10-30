@@ -1,12 +1,106 @@
-name: CABAL EU News Monitor Test
+name: CABAL EU News Monitor
 
 on:
+  schedule:
+    - cron: "5,10,20,25,35,40,50,55 * * * *"
+    - cron: "0,15,30,45 * * * *"
+
   workflow_dispatch:
+    inputs:
+      test_message:
+        description: "Send latest CABAL EU news as a test message"
+        required: true
+        default: false
+        type: boolean
+
+      populate_last_10:
+        description: "Populate Discord with the latest 10 CABAL EU news"
+        required: true
+        default: false
+        type: boolean
+
+      leak_scan:
+        description: "Scan unpublished IDs for EU LEAKS"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cabal-eu-news-monitor
+  cancel-in-progress: false
 
 jobs:
-  test:
+  check-news:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test
-        run: echo "OK"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine run mode
+        shell: bash
+        run: |
+          echo "TEST_MESSAGE=false" >> "$GITHUB_ENV"
+          echo "POPULATE_LAST_10=false" >> "$GITHUB_ENV"
+          echo "RUN_LEAK_SCAN=false" >> "$GITHUB_ENV"
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TEST_MESSAGE_VALUE=$(jq -r '.inputs.test_message // "false"' "$GITHUB_EVENT_PATH")
+            POPULATE_LAST_10_VALUE=$(jq -r '.inputs.populate_last_10 // "false"' "$GITHUB_EVENT_PATH")
+            LEAK_SCAN_VALUE=$(jq -r '.inputs.leak_scan // "false"' "$GITHUB_EVENT_PATH")
+
+            echo "TEST_MESSAGE=$TEST_MESSAGE_VALUE" >> "$GITHUB_ENV"
+            echo "POPULATE_LAST_10=$POPULATE_LAST_10_VALUE" >> "$GITHUB_ENV"
+            echo "RUN_LEAK_SCAN=$LEAK_SCAN_VALUE" >> "$GITHUB_ENV"
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            SCHEDULE_VALUE=$(jq -r '.schedule // ""' "$GITHUB_EVENT_PATH")
+
+            if [ "$SCHEDULE_VALUE" = "0,15,30,45 * * * *" ]; then
+              echo "RUN_LEAK_SCAN=true" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: Check CABAL EU news
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python cabal_news.py
+
+      - name: Save news state
+        shell: bash
+        run: |
+          if [ -z "$(git status --porcelain -- state.json leaks.json)" ]; then
+            echo "No state changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -f state.json ]; then
+            git add state.json
+          fi
+
+          if [ -f leaks.json ]; then
+            git add leaks.json
+          fi
+
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "Update CABAL news state"
+          git push
