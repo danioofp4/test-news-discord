@@ -164,39 +164,26 @@ def send_discord_embed(title, url, test=False):
             "DISCORD_WEBHOOK_URL is not configured."
         )
 
+    embed = {
+        "title": title,
+        "url": url,
+        "color": 16744192,
+        "footer": {
+            "text": (
+                "CABAL EU News Monitor • TEST"
+                if test
+                else "CABAL EU News"
+            )
+        },
+    }
+
+    # Tylko wiadomość testowa dostaje dodatkową informację.
     if test:
-        description = (
-            "🧪 **TEST MESSAGE**\n\n"
-            "This is a test of the CABAL EU news monitor."
-        )
-        footer = "CABAL EU News Monitor • TEST"
-    else:
-        description = (
-            "A new announcement has appeared "
-            "on the CABAL EU website."
-        )
-        footer = "CABAL EU News Monitor"
+        embed["description"] = "🧪 **TEST MESSAGE**"
 
     payload = {
         "username": "CABAL EU News",
-        "embeds": [
-            {
-                "title": title,
-                "url": url,
-                "description": description,
-                "color": 16744192,
-                "fields": [
-                    {
-                        "name": "🔗 Link",
-                        "value": f"[Open on CABAL EU]({url})",
-                        "inline": False,
-                    }
-                ],
-                "footer": {
-                    "text": footer
-                },
-            }
-        ],
+        "embeds": [embed],
     }
 
     response = requests.post(
