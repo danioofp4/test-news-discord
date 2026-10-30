@@ -1251,6 +1251,62 @@ def region_markers(text):
     )
 
 
+
+def currency_markers(text):
+    """
+    Detect real-money regional price markers.
+
+    CABAL regional heuristic:
+    - EUR / euro / € -> EU
+    - USD / dollar / $ -> NA
+
+    We only count currency markers attached to a numeric price.
+    """
+    if not text:
+        return [], []
+
+    eu_patterns = [
+        r"€\s*\d[\d\s,\.]*",
+        r"\d[\d\s,\.]*\s*€",
+        r"\bEUR\s*\d[\d\s,\.]*",
+        r"\d[\d\s,\.]*\s*EUR\b",
+        r"\d[\d\s,\.]*\s*euros?\b",
+        r"\beuros?\s*\d[\d\s,\.]*",
+    ]
+
+    na_patterns = [
+        r"\$\s*\d[\d\s,\.]*",
+        r"\d[\d\s,\.]*\s*\$",
+        r"\bUSD\s*\d[\d\s,\.]*",
+        r"\d[\d\s,\.]*\s*USD\b",
+        r"\d[\d\s,\.]*\s*dollars?\b",
+        r"\bdollars?\s*\d[\d\s,\.]*",
+    ]
+
+    eu_hits = []
+    na_hits = []
+
+    for pattern in eu_patterns:
+        eu_hits.extend(
+            re.findall(
+                pattern,
+                text,
+                re.IGNORECASE,
+            )
+        )
+
+    for pattern in na_patterns:
+        na_hits.extend(
+            re.findall(
+                pattern,
+                text,
+                re.IGNORECASE,
+            )
+        )
+
+    return eu_hits, na_hits
+
+
 def add_score(
     evidence,
     news_id,
@@ -1340,6 +1396,50 @@ def build_region_evidence(
                 news_id
             ]["reasons"].append(
                 "Conflicting EU/NA markers"
+            )
+
+        eu_currency, na_currency = currency_markers(
+            text
+        )
+
+        if (
+            eu_currency
+            and not na_currency
+        ):
+            add_score(
+                evidence,
+                news_id,
+                "EU",
+                120,
+                (
+                    "EUR/euro price marker found: "
+                    f"{eu_currency}"
+                ),
+            )
+
+        if (
+            na_currency
+            and not eu_currency
+        ):
+            add_score(
+                evidence,
+                news_id,
+                "NA",
+                120,
+                (
+                    "USD/dollar price marker found: "
+                    f"{na_currency}"
+                ),
+            )
+
+        if (
+            eu_currency
+            and na_currency
+        ):
+            evidence[
+                news_id
+            ]["reasons"].append(
+                "Conflicting EUR/USD price markers"
             )
 
     # -----------------------------------------
@@ -1806,10 +1906,16 @@ def scan_for_leaks(
             article["body"]
         )
 
+        eu_currency, na_currency = currency_markers(
+            language_text
+        )
+
         print(
             f"{news_id}: English candidate | "
             f"title='{article['title']}' | "
-            f"eCoins={prices}"
+            f"eCoins={prices} | "
+            f"EUR={eu_currency} | "
+            f"USD={na_currency}"
         )
 
         time.sleep(0.15)
