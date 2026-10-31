@@ -8,11 +8,15 @@
     "7854",
     "7853"
   ],
-  "ignored_mobile_ids": [],
-  "pending_ids": [
-    "7870",
+  "ignored_mobile_ids": [
+    "7875",
+    "7873",
+    "7872",
     "7869",
     "7868"
+  ],
+  "pending_ids": [
+    "7870"
   ],
   "unknown_notified_ids": [
     "7870",
