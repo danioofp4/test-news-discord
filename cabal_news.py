@@ -1107,8 +1107,13 @@ def get_article_page(
         ):
             break
 
-        if parent_name == "a":
-            href = node.parent.get("href")
+        link_parent = node.find_parent(
+            "a",
+            href=True,
+        )
+
+        if link_parent:
+            href = link_parent.get("href")
 
             if href:
                 absolute_url = urljoin(
@@ -1226,9 +1231,22 @@ def is_mobile_article(article):
         f"{article.get('description', '')}"
     ).lower()
 
-    return (
+    if (
         "cabalmobile.playthisgame.com"
         in text
+    ):
+        return True
+
+    # Fallback for article layouts where the href is wrapped in
+    # nested markup and only the visible guide text is captured.
+    mobile_text_markers = [
+        "probability information guide",
+        "for more information regarding our drop rates",
+    ]
+
+    return any(
+        marker in text
+        for marker in mobile_text_markers
     )
 
 
