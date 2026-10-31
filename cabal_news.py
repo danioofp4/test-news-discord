@@ -42,6 +42,14 @@ UNKNOWN_WEBHOOKS = [
     ("miron-unknown", MIRON_UNKNOWN_WEBHOOK_URL),
 ]
 
+MIRON_NEWS_WEBHOOKS = [
+    ("miron", MIRON_NEWS_WEBHOOK_URL),
+]
+
+MIRON_UNKNOWN_WEBHOOKS = [
+    ("miron-unknown", MIRON_UNKNOWN_WEBHOOK_URL),
+]
+
 TEST_MESSAGE = os.environ.get(
     "TEST_MESSAGE", ""
 ).lower() in {"1", "true", "yes", "on"}
@@ -52,6 +60,18 @@ POPULATE_LAST_10 = os.environ.get(
 
 RUN_LEAK_SCAN = os.environ.get(
     "RUN_LEAK_SCAN", ""
+).lower() in {"1", "true", "yes", "on"}
+
+MIRON_TEST_MESSAGE = os.environ.get(
+    "MIRON_TEST_MESSAGE", ""
+).lower() in {"1", "true", "yes", "on"}
+
+MIRON_POPULATE_LAST_10 = os.environ.get(
+    "MIRON_POPULATE_LAST_10", ""
+).lower() in {"1", "true", "yes", "on"}
+
+MIRON_LEAK_SCAN = os.environ.get(
+    "MIRON_LEAK_SCAN", ""
 ).lower() in {"1", "true", "yes", "on"}
 
 HEADERS = {
@@ -498,11 +518,19 @@ def send_discord_embed(
     item,
     test=False,
     leak=False,
+    webhook_group=None,
+    group_name="news",
 ):
-    if not WEBHOOK_URL:
+    if webhook_group is None:
+        webhook_group = NEWS_WEBHOOKS
+
+    if not any(
+        url
+        for _, url in webhook_group
+    ):
         raise RuntimeError(
-            "DISCORD_WEBHOOK_URL "
-            "is not configured."
+            f"No Discord webhook configured "
+            f"for group: {group_name}"
         )
 
     base_title = (
@@ -602,9 +630,9 @@ def send_discord_embed(
     }
 
     send_payload_to_webhooks(
-        NEWS_WEBHOOKS,
+        webhook_group,
         payload,
-        "news",
+        group_name,
     )
 
 
@@ -612,10 +640,15 @@ def send_discord_embed(
 def send_unknown_discord_embed(
     article,
     reason,
+    webhook_group=None,
+    group_name="unknown",
 ):
+    if webhook_group is None:
+        webhook_group = UNKNOWN_WEBHOOKS
+
     if not any(
         url
-        for _, url in UNKNOWN_WEBHOOKS
+        for _, url in webhook_group
     ):
         print(
             "No UNKNOWN Discord webhook is configured. "
@@ -718,9 +751,9 @@ def send_unknown_discord_embed(
     }
 
     sent = send_payload_to_webhooks(
-        UNKNOWN_WEBHOOKS,
+        webhook_group,
         payload,
-        "unknown",
+        group_name,
     )
 
     return sent > 0
@@ -771,8 +804,21 @@ def send_startup_message(latest):
 def populate_last_news(
     current_news,
     limit=10,
+    miron_only=False,
 ):
     items = current_news[:limit]
+
+    webhook_group = (
+        MIRON_NEWS_WEBHOOKS
+        if miron_only
+        else NEWS_WEBHOOKS
+    )
+
+    group_name = (
+        "miron-news"
+        if miron_only
+        else "news"
+    )
 
     print(
         f"Populating Discord with "
@@ -787,7 +833,11 @@ def populate_last_news(
             f"{item['title']}"
         )
 
-        send_discord_embed(item)
+        send_discord_embed(
+            item,
+            webhook_group=webhook_group,
+            group_name=group_name,
+        )
         time.sleep(0.5)
 
     print(
@@ -2331,6 +2381,234 @@ def scan_for_leaks(
     )
 
 
+def scan_for_leaks_miron_only(
+    eu_news,
+    na_news,
+    official_ids,
+    leak_state,
+):
+    """
+    Manual dry-run leak scan for Miron's Discord only.
+
+    It sends:
+    - confident EU leaks -> DISCORD_MIRON_NEWS
+    - UNKNOWN candidates -> DISCORD_MIRON_UNKNOWN_LEAKS
+
+    It never writes state.json or leaks.json and does not mark
+    anything as seen/notified.
+    """
+
+    ignored_na_ids = set(
+        leak_state["ignored_na_ids"]
+    )
+
+    eu_ids = {
+        item["id"]
+        for item in eu_news
+    }
+
+    na_ids = {
+        item["id"]
+        for item in na_news
+    }
+
+    highest_eu_id = max(
+        int(news_id)
+        for news_id in eu_ids
+    )
+
+    highest_na_id = max(
+        int(news_id)
+        for news_id in na_ids
+    )
+
+    start_id = (
+        highest_eu_id + 1
+    )
+
+    end_id = (
+        max(
+            highest_eu_id,
+            highest_na_id,
+        )
+        + LEAK_LOOKAHEAD
+    )
+
+    print(
+        "MIRON ONLY leak scan (dry-run): "
+        f"EU latest={highest_eu_id}, "
+        f"NA latest={highest_na_id}, "
+        f"checking {start_id} -> {end_id}"
+    )
+
+    article_cache = {}
+    candidates = []
+
+    for news_id in range(
+        start_id,
+        end_id + 1,
+    ):
+        str_id = str(news_id)
+
+        if str_id in official_ids:
+            continue
+
+        if str_id in na_ids:
+            print(
+                f"{news_id}: "
+                f"NA official - ignored"
+            )
+            continue
+
+        if str_id in ignored_na_ids:
+            print(
+                f"{news_id}: "
+                f"known NA - ignored"
+            )
+            continue
+
+        article = get_article_page(
+            news_id,
+            cache=article_cache,
+        )
+
+        if not article:
+            print(
+                f"{news_id}: "
+                f"no valid article"
+            )
+            time.sleep(0.20)
+            continue
+
+        language_text = (
+            f"{article['title']}\n"
+            f"{article['body']}"
+        )
+
+        (
+            is_english,
+            language_info,
+        ) = detect_english(
+            language_text
+        )
+
+        if not is_english:
+            print(
+                f"{news_id}: "
+                f"non-English "
+                f"({language_info}) "
+                f"- ignored"
+            )
+            time.sleep(0.20)
+            continue
+
+        article[
+            "_language_info"
+        ] = language_info
+
+        candidates.append(
+            article
+        )
+
+        prices = extract_ecoin_prices(
+            article["body"]
+        )
+
+        eu_currency, na_currency = currency_markers(
+            language_text
+        )
+
+        print(
+            f"{news_id}: English candidate | "
+            f"title='{article['title']}' | "
+            f"eCoins={prices} | "
+            f"EUR={eu_currency} | "
+            f"USD={na_currency}"
+        )
+
+        time.sleep(0.15)
+
+    print(
+        f"MIRON ONLY English unpublished "
+        f"candidates collected: "
+        f"{len(candidates)}"
+    )
+
+    evidence = build_region_evidence(
+        candidates,
+        eu_news,
+        na_news,
+        article_cache,
+    )
+
+    sent_eu = 0
+    sent_unknown = 0
+
+    for article in sorted(
+        candidates,
+        key=lambda item: int(
+            item["id"]
+        ),
+    ):
+        news_id = article["id"]
+
+        region, reason = decide_region(
+            evidence[news_id]
+        )
+
+        if region == "EU":
+            print(
+                f"MIRON ONLY EU LEAK: "
+                f"{news_id} - "
+                f"{article['title']} "
+                f"[{reason}]"
+            )
+
+            send_discord_embed(
+                article,
+                leak=True,
+                webhook_group=MIRON_NEWS_WEBHOOKS,
+                group_name="miron-news",
+            )
+
+            sent_eu += 1
+            time.sleep(0.5)
+
+        elif region == "NA":
+            print(
+                f"{news_id}: "
+                f"NA candidate - not sent "
+                f"[{reason}]"
+            )
+
+        else:
+            print(
+                f"MIRON ONLY UNKNOWN: "
+                f"{news_id} - "
+                f"{article['title']} "
+                f"[{reason}]"
+            )
+
+            sent = send_unknown_discord_embed(
+                article,
+                reason,
+                webhook_group=MIRON_UNKNOWN_WEBHOOKS,
+                group_name="miron-unknown",
+            )
+
+            if sent:
+                sent_unknown += 1
+
+            time.sleep(0.5)
+
+    print(
+        "MIRON ONLY leak scan complete. "
+        f"EU leaks sent: {sent_eu}. "
+        f"UNKNOWN sent: {sent_unknown}. "
+        "No state files were changed."
+    )
+
+
 # =========================================================
 # MAIN
 # =========================================================
@@ -2342,15 +2620,20 @@ def main():
             "DISCORD_WEBHOOK_URL"
         )
 
-    if (
-        TEST_MESSAGE
-        and POPULATE_LAST_10
-    ):
+    selected_modes = sum(
+        [
+            TEST_MESSAGE,
+            POPULATE_LAST_10,
+            RUN_LEAK_SCAN,
+            MIRON_TEST_MESSAGE,
+            MIRON_POPULATE_LAST_10,
+            MIRON_LEAK_SCAN,
+        ]
+    )
+
+    if selected_modes > 1:
         raise RuntimeError(
-            "Select either "
-            "TEST_MESSAGE or "
-            "POPULATE_LAST_10, "
-            "not both."
+            "Select only one workflow option at a time."
         )
 
     eu_news = get_news_list(
@@ -2373,6 +2656,79 @@ def main():
         f"Latest EU ID: "
         f"{eu_news[0]['id']}"
     )
+
+    if MIRON_TEST_MESSAGE:
+        latest = eu_news[0]
+
+        print(
+            f"Sending MIRON ONLY TEST message: "
+            f"{latest['id']} - "
+            f"{latest['title']}"
+        )
+
+        send_discord_embed(
+            latest,
+            test=True,
+            webhook_group=MIRON_NEWS_WEBHOOKS,
+            group_name="miron-news",
+        )
+
+        print(
+            "Miron-only test message "
+            "sent successfully."
+        )
+
+        return
+
+    if MIRON_POPULATE_LAST_10:
+        print(
+            "MIRON ONLY: populating latest 10 news."
+        )
+
+        populate_last_news(
+            eu_news,
+            limit=10,
+            miron_only=True,
+        )
+
+        return
+
+    if MIRON_LEAK_SCAN:
+        official_ids = (
+            load_official_ids()
+        )
+
+        leak_state = (
+            load_leak_state()
+        )
+
+        na_news = get_news_list(
+            NA_LIST_URL,
+            NA_BASE_URL,
+        )
+
+        if not na_news:
+            raise RuntimeError(
+                "Miron leak scan requested, "
+                "but no NA news entries were found."
+            )
+
+        print(
+            f"Found "
+            f"{len(na_news)} "
+            f"official NA entries. "
+            f"Latest NA ID: "
+            f"{na_news[0]['id']}"
+        )
+
+        scan_for_leaks_miron_only(
+            eu_news,
+            na_news,
+            official_ids,
+            leak_state,
+        )
+
+        return
 
     if TEST_MESSAGE:
         latest = eu_news[0]
