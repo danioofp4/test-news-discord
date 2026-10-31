@@ -356,6 +356,7 @@ def load_leak_state():
     default_state = {
         "leak_ids": [],
         "ignored_na_ids": [],
+        "ignored_mobile_ids": [],
         "pending_ids": [],
         "unknown_notified_ids": [],
     }
@@ -382,6 +383,13 @@ def load_leak_state():
                 str(x)
                 for x in data.get(
                     "ignored_na_ids",
+                    [],
+                )
+            ],
+            "ignored_mobile_ids": [
+                str(x)
+                for x in data.get(
+                    "ignored_mobile_ids",
                     [],
                 )
             ],
@@ -420,6 +428,12 @@ def save_leak_state(state):
 
         "ignored_na_ids": sorted(
             set(state["ignored_na_ids"]),
+            key=lambda x: int(x),
+            reverse=True,
+        )[:500],
+
+        "ignored_mobile_ids": sorted(
+            set(state["ignored_mobile_ids"]),
             key=lambda x: int(x),
             reverse=True,
         )[:500],
@@ -1162,6 +1176,28 @@ def get_article_page(
         cache[str_id] = article
 
     return article
+
+
+# =========================================================
+# PRODUCT / PLATFORM DETECTION
+# =========================================================
+
+def is_mobile_article(article):
+    """
+    CABAL Mobile articles can appear in the same numeric Content ID space.
+    An exact cabalmobile.playthisgame.com link is treated as a hard signal
+    that the article belongs to CABAL Mobile, not CABAL Online EU/NA.
+    """
+    text = (
+        f"{article.get('title', '')}\n"
+        f"{article.get('body', '')}\n"
+        f"{article.get('description', '')}"
+    ).lower()
+
+    return (
+        "cabalmobile.playthisgame.com"
+        in text
+    )
 
 
 # =========================================================
@@ -1992,6 +2028,10 @@ def scan_for_leaks(
         leak_state["ignored_na_ids"]
     )
 
+    ignored_mobile_ids = set(
+        leak_state["ignored_mobile_ids"]
+    )
+
     pending_ids = set(
         leak_state["pending_ids"]
     )
@@ -2087,6 +2127,10 @@ def scan_for_leaks(
         if str_id in ignored_na_ids:
             continue
 
+        # Already confirmed as CABAL Mobile.
+        if str_id in ignored_mobile_ids:
+            continue
+
         article = get_article_page(
             news_id,
             cache=article_cache,
@@ -2100,6 +2144,23 @@ def scan_for_leaks(
             print(
                 f"{news_id}: "
                 f"no valid article"
+            )
+
+            time.sleep(0.20)
+            continue
+
+        if is_mobile_article(article):
+            ignored_mobile_ids.add(
+                str_id
+            )
+
+            pending_ids.discard(
+                str_id
+            )
+
+            print(
+                f"{news_id}: "
+                f"CABAL Mobile article - ignored"
             )
 
             time.sleep(0.20)
@@ -2232,6 +2293,12 @@ def scan_for_leaks(
             )
 
             leak_state[
+                "ignored_mobile_ids"
+            ] = list(
+                ignored_mobile_ids
+            )
+
+            leak_state[
                 "pending_ids"
             ] = list(
                 pending_ids
@@ -2354,6 +2421,12 @@ def scan_for_leaks(
     )
 
     leak_state[
+        "ignored_mobile_ids"
+    ] = list(
+        ignored_mobile_ids
+    )
+
+    leak_state[
         "pending_ids"
     ] = list(
         pending_ids
@@ -2376,6 +2449,8 @@ def scan_for_leaks(
         f"{len(pending_ids)}. "
         f"Known NA ignored: "
         f"{len(ignored_na_ids)}. "
+        f"Mobile ignored: "
+        f"{len(ignored_mobile_ids)}. "
         f"UNKNOWN notified: "
         f"{len(unknown_notified_ids)}."
     )
@@ -2400,6 +2475,10 @@ def scan_for_leaks_miron_only(
 
     ignored_na_ids = set(
         leak_state["ignored_na_ids"]
+    )
+
+    ignored_mobile_ids = set(
+        leak_state["ignored_mobile_ids"]
     )
 
     eu_ids = {
@@ -2467,6 +2546,13 @@ def scan_for_leaks_miron_only(
             )
             continue
 
+        if str_id in ignored_mobile_ids:
+            print(
+                f"{news_id}: "
+                f"known CABAL Mobile - ignored"
+            )
+            continue
+
         article = get_article_page(
             news_id,
             cache=article_cache,
@@ -2476,6 +2562,14 @@ def scan_for_leaks_miron_only(
             print(
                 f"{news_id}: "
                 f"no valid article"
+            )
+            time.sleep(0.20)
+            continue
+
+        if is_mobile_article(article):
+            print(
+                f"{news_id}: "
+                f"CABAL Mobile article - ignored"
             )
             time.sleep(0.20)
             continue
