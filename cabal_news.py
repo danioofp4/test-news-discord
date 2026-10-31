@@ -1076,6 +1076,7 @@ def get_article_page(
 
     date = ""
     body_parts = []
+    article_links = []
 
     for node in title_node.find_all_next(
         string=True
@@ -1105,6 +1106,20 @@ def get_article_page(
             == "view all news"
         ):
             break
+
+        if parent_name == "a":
+            href = node.parent.get("href")
+
+            if href:
+                absolute_url = urljoin(
+                    EU_BASE_URL,
+                    href,
+                )
+
+                if absolute_url not in article_links:
+                    article_links.append(
+                        absolute_url
+                    )
 
         if (
             not date
@@ -1170,6 +1185,7 @@ def get_article_page(
         "description": body,
         "body": body,
         "image_url": image_url,
+        "links": article_links,
     }
 
     if cache is not None:
@@ -1185,9 +1201,25 @@ def get_article_page(
 def is_mobile_article(article):
     """
     CABAL Mobile articles can appear in the same numeric Content ID space.
-    An exact cabalmobile.playthisgame.com link is treated as a hard signal
-    that the article belongs to CABAL Mobile, not CABAL Online EU/NA.
+    An exact cabalmobile.playthisgame.com link inside the article content
+    is treated as a hard signal that the article belongs to CABAL Mobile,
+    not CABAL Online EU/NA.
     """
+    links = [
+        str(link).lower()
+        for link in article.get(
+            "links",
+            [],
+        )
+    ]
+
+    if any(
+        "cabalmobile.playthisgame.com"
+        in link
+        for link in links
+    ):
+        return True
+
     text = (
         f"{article.get('title', '')}\n"
         f"{article.get('body', '')}\n"
@@ -2158,9 +2190,22 @@ def scan_for_leaks(
                 str_id
             )
 
+            mobile_links = [
+                link
+                for link in article.get(
+                    "links",
+                    [],
+                )
+                if (
+                    "cabalmobile.playthisgame.com"
+                    in link.lower()
+                )
+            ]
+
             print(
                 f"{news_id}: "
-                f"CABAL Mobile article - ignored"
+                f"CABAL Mobile article - ignored "
+                f"[links={mobile_links}]"
             )
 
             time.sleep(0.20)
