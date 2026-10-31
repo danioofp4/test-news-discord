@@ -77,6 +77,8 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_UNKNOWN_WEBHOOK_URL: ${{ secrets.DISCORD_UNKNOWN_WEBHOOK_URL }}
+          DISCORD_MIRON_NEWS: ${{ secrets.DISCORD_MIRON_NEWS }}
+          DISCORD_MIRON_UNKNOWN_LEAKS: ${{ secrets.DISCORD_MIRON_UNKNOWN_LEAKS }}
         run: python cabal_news.py
 
       - name: Save news state
