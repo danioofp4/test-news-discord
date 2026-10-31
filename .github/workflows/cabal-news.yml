@@ -25,6 +25,24 @@ on:
         default: false
         type: boolean
 
+      miron_test_message:
+        description: "[MIRON ONLY] Send latest EU news as a test message"
+        required: true
+        default: false
+        type: boolean
+
+      miron_populate_last_10:
+        description: "[MIRON ONLY] Populate latest 10 EU news"
+        required: true
+        default: false
+        type: boolean
+
+      miron_leak_scan:
+        description: "[MIRON ONLY] Leak scan dry-run (no state changes)"
+        required: true
+        default: false
+        type: boolean
+
 permissions:
   contents: write
 
@@ -54,15 +72,26 @@ jobs:
           echo "TEST_MESSAGE=false" >> "$GITHUB_ENV"
           echo "POPULATE_LAST_10=false" >> "$GITHUB_ENV"
           echo "RUN_LEAK_SCAN=false" >> "$GITHUB_ENV"
+          echo "MIRON_TEST_MESSAGE=false" >> "$GITHUB_ENV"
+          echo "MIRON_POPULATE_LAST_10=false" >> "$GITHUB_ENV"
+          echo "MIRON_LEAK_SCAN=false" >> "$GITHUB_ENV"
 
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             TEST_MESSAGE_VALUE=$(jq -r '.inputs.test_message // "false"' "$GITHUB_EVENT_PATH")
             POPULATE_LAST_10_VALUE=$(jq -r '.inputs.populate_last_10 // "false"' "$GITHUB_EVENT_PATH")
             LEAK_SCAN_VALUE=$(jq -r '.inputs.leak_scan // "false"' "$GITHUB_EVENT_PATH")
 
+            MIRON_TEST_MESSAGE_VALUE=$(jq -r '.inputs.miron_test_message // "false"' "$GITHUB_EVENT_PATH")
+            MIRON_POPULATE_LAST_10_VALUE=$(jq -r '.inputs.miron_populate_last_10 // "false"' "$GITHUB_EVENT_PATH")
+            MIRON_LEAK_SCAN_VALUE=$(jq -r '.inputs.miron_leak_scan // "false"' "$GITHUB_EVENT_PATH")
+
             echo "TEST_MESSAGE=$TEST_MESSAGE_VALUE" >> "$GITHUB_ENV"
             echo "POPULATE_LAST_10=$POPULATE_LAST_10_VALUE" >> "$GITHUB_ENV"
             echo "RUN_LEAK_SCAN=$LEAK_SCAN_VALUE" >> "$GITHUB_ENV"
+
+            echo "MIRON_TEST_MESSAGE=$MIRON_TEST_MESSAGE_VALUE" >> "$GITHUB_ENV"
+            echo "MIRON_POPULATE_LAST_10=$MIRON_POPULATE_LAST_10_VALUE" >> "$GITHUB_ENV"
+            echo "MIRON_LEAK_SCAN=$MIRON_LEAK_SCAN_VALUE" >> "$GITHUB_ENV"
           fi
 
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
