@@ -27,6 +27,21 @@ TITLE_MAX_ID_DISTANCE = 30
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 UNKNOWN_WEBHOOK_URL = os.environ.get("DISCORD_UNKNOWN_WEBHOOK_URL")
 
+MIRON_NEWS_WEBHOOK_URL = os.environ.get("DISCORD_MIRON_NEWS")
+MIRON_UNKNOWN_WEBHOOK_URL = os.environ.get(
+    "DISCORD_MIRON_UNKNOWN_LEAKS"
+)
+
+NEWS_WEBHOOKS = [
+    ("main", WEBHOOK_URL),
+    ("miron", MIRON_NEWS_WEBHOOK_URL),
+]
+
+UNKNOWN_WEBHOOKS = [
+    ("main-unknown", UNKNOWN_WEBHOOK_URL),
+    ("miron-unknown", MIRON_UNKNOWN_WEBHOOK_URL),
+]
+
 TEST_MESSAGE = os.environ.get(
     "TEST_MESSAGE", ""
 ).lower() in {"1", "true", "yes", "on"}
@@ -415,6 +430,70 @@ def save_leak_state(state):
 # DISCORD
 # =========================================================
 
+def send_payload_to_webhooks(
+    webhook_group,
+    payload,
+    group_name,
+):
+    configured = [
+        (name, url)
+        for name, url in webhook_group
+        if url
+    ]
+
+    if not configured:
+        print(
+            f"No configured Discord webhooks "
+            f"for group: {group_name}"
+        )
+        return 0
+
+    sent = 0
+
+    for name, webhook_url in configured:
+        response = requests.post(
+            webhook_url,
+            json=payload,
+            timeout=30,
+        )
+
+        if response.status_code == 429:
+            retry_after = float(
+                response.json().get(
+                    "retry_after",
+                    1,
+                )
+            )
+
+            print(
+                f"Discord rate limit "
+                f"for {group_name}/{name}. "
+                f"Retrying after "
+                f"{retry_after} seconds."
+            )
+
+            time.sleep(
+                retry_after
+            )
+
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                timeout=30,
+            )
+
+        response.raise_for_status()
+
+        sent += 1
+
+        print(
+            f"Discord sent: "
+            f"{group_name}/{name}"
+        )
+
+    return sent
+
+
 def send_discord_embed(
     item,
     test=False,
@@ -522,37 +601,11 @@ def send_discord_embed(
         ],
     }
 
-    response = requests.post(
-        WEBHOOK_URL,
-        json=payload,
-        timeout=30,
+    send_payload_to_webhooks(
+        NEWS_WEBHOOKS,
+        payload,
+        "news",
     )
-
-    if response.status_code == 429:
-        retry_after = float(
-            response.json().get(
-                "retry_after",
-                1,
-            )
-        )
-
-        print(
-            f"Discord rate limit. "
-            f"Retrying after "
-            f"{retry_after} seconds."
-        )
-
-        time.sleep(
-            retry_after
-        )
-
-        response = requests.post(
-            WEBHOOK_URL,
-            json=payload,
-            timeout=30,
-        )
-
-    response.raise_for_status()
 
 
 
@@ -560,9 +613,12 @@ def send_unknown_discord_embed(
     article,
     reason,
 ):
-    if not UNKNOWN_WEBHOOK_URL:
+    if not any(
+        url
+        for _, url in UNKNOWN_WEBHOOKS
+    ):
         print(
-            "DISCORD_UNKNOWN_WEBHOOK_URL is not configured. "
+            "No UNKNOWN Discord webhook is configured. "
             "UNKNOWN notification skipped."
         )
         return False
@@ -661,38 +717,13 @@ def send_unknown_discord_embed(
         ],
     }
 
-    response = requests.post(
-        UNKNOWN_WEBHOOK_URL,
-        json=payload,
-        timeout=30,
+    sent = send_payload_to_webhooks(
+        UNKNOWN_WEBHOOKS,
+        payload,
+        "unknown",
     )
 
-    if response.status_code == 429:
-        retry_after = float(
-            response.json().get(
-                "retry_after",
-                1,
-            )
-        )
-
-        print(
-            f"UNKNOWN Discord rate limit. "
-            f"Retrying after {retry_after} seconds."
-        )
-
-        time.sleep(
-            retry_after
-        )
-
-        response = requests.post(
-            UNKNOWN_WEBHOOK_URL,
-            json=payload,
-            timeout=30,
-        )
-
-    response.raise_for_status()
-
-    return True
+    return sent > 0
 
 
 def send_startup_message(latest):
@@ -726,13 +757,11 @@ def send_startup_message(latest):
         ],
     }
 
-    response = requests.post(
-        WEBHOOK_URL,
-        json=payload,
-        timeout=30,
+    send_payload_to_webhooks(
+        NEWS_WEBHOOKS,
+        payload,
+        "news",
     )
-
-    response.raise_for_status()
 
 
 # =========================================================
