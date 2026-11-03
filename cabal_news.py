@@ -20,6 +20,7 @@ NA_LIST_URL = f"{NA_BASE_URL}/en/all/List"
 
 OFFICIAL_STATE_FILE = Path("state.json")
 LEAK_STATE_FILE = Path("leaks.json")
+DELIVERY_STATE_FILE = Path("delivery_state.json")
 
 LEAK_LOOKAHEAD = 20
 TITLE_MAX_ID_DISTANCE = 30
@@ -464,68 +465,103 @@ def save_leak_state(state):
 # DISCORD
 # =========================================================
 
+def load_delivery_state():
+    """Persistent per-webhook delivery receipts, used for automatic posts."""
+    if not DELIVERY_STATE_FILE.exists():
+        return {"delivered": {}}
+
+    data = json.loads(
+        DELIVERY_STATE_FILE.read_text(encoding="utf-8")
+    )
+    delivered = data.get("delivered", {})
+    if not isinstance(delivered, dict):
+        raise ValueError("Invalid delivery_state.json: delivered must be an object")
+    for message_key, endpoints in delivered.items():
+        if not isinstance(message_key, str) or not isinstance(endpoints, list):
+            raise ValueError("Invalid delivery_state.json: malformed receipt")
+    return {"delivered": delivered}
+
+
+def save_delivery_state(state):
+    """Write after each success, so a later webhook failure cannot erase it."""
+    temporary = DELIVERY_STATE_FILE.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(state, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, DELIVERY_STATE_FILE)
+
+
 def send_payload_to_webhooks(
     webhook_group,
     payload,
     group_name,
+    delivery_key=None,
 ):
-    configured = [
-        (name, url)
-        for name, url in webhook_group
-        if url
-    ]
+    """
+    For automatic posts, send to each destination only if it has no receipt.
+    For manual tests/dry-runs, delivery_key=None means always send.
+    Failures are isolated per destination and retried in later runs.
+    Returns True only if ALL requested destinations have succeeded.
+    """
+    ledger = load_delivery_state() if delivery_key else None
+    completed = set(
+        ledger["delivered"].get(delivery_key, [])
+    ) if ledger is not None else set()
 
-    if not configured:
-        print(
-            f"No configured Discord webhooks "
-            f"for group: {group_name}"
-        )
-        return 0
+    all_delivered = bool(webhook_group)
 
-    sent = 0
+    for name, webhook_url in webhook_group:
+        if delivery_key and name in completed:
+            print(f"Discord already delivered: {group_name}/{name} [{delivery_key}]")
+            continue
 
-    for name, webhook_url in configured:
-        response = requests.post(
-            webhook_url,
-            json=payload,
-            timeout=30,
-        )
+        if not webhook_url:
+            print(f"Discord ERROR: missing webhook for {group_name}/{name}")
+            all_delivered = False
+            continue
 
-        if response.status_code == 429:
-            retry_after = float(
-                response.json().get(
-                    "retry_after",
-                    1,
-                )
-            )
-
-            print(
-                f"Discord rate limit "
-                f"for {group_name}/{name}. "
-                f"Retrying after "
-                f"{retry_after} seconds."
-            )
-
-            time.sleep(
-                retry_after
-            )
-
+        try:
             response = requests.post(
                 webhook_url,
                 json=payload,
                 timeout=30,
             )
 
-        response.raise_for_status()
+            if response.status_code == 429:
+                retry_after = max(0.0, min(
+                    float(response.json().get("retry_after", 1)),
+                    60.0,
+                ))
+                print(
+                    f"Discord rate limit: {group_name}/{name}; "
+                    f"retry in {retry_after} seconds"
+                )
+                time.sleep(retry_after)
+                response = requests.post(
+                    webhook_url,
+                    json=payload,
+                    timeout=30,
+                )
 
-        sent += 1
+            response.raise_for_status()
+        except requests.RequestException as error:
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            print(
+                f"Discord ERROR: {group_name}/{name}: "
+                f"HTTP {status if status is not None else 'request failed'}; "
+                f"will retry on next scan"
+            )
+            all_delivered = False
+            continue
 
-        print(
-            f"Discord sent: "
-            f"{group_name}/{name}"
-        )
+        print(f"Discord sent: {group_name}/{name}")
+        if ledger is not None:
+            completed.add(name)
+            ledger["delivered"][delivery_key] = sorted(completed)
+            save_delivery_state(ledger)
 
-    return sent
+    return all_delivered
 
 
 def send_discord_embed(
@@ -534,6 +570,7 @@ def send_discord_embed(
     leak=False,
     webhook_group=None,
     group_name="news",
+    track_delivery=False,
 ):
     if webhook_group is None:
         webhook_group = NEWS_WEBHOOKS
@@ -643,10 +680,11 @@ def send_discord_embed(
         ],
     }
 
-    send_payload_to_webhooks(
+    return send_payload_to_webhooks(
         webhook_group,
         payload,
         group_name,
+        delivery_key=(f"news:{news_id}" if track_delivery else None),
     )
 
 
@@ -656,6 +694,7 @@ def send_unknown_discord_embed(
     reason,
     webhook_group=None,
     group_name="unknown",
+    track_delivery=False,
 ):
     if webhook_group is None:
         webhook_group = UNKNOWN_WEBHOOKS
@@ -764,13 +803,12 @@ def send_unknown_discord_embed(
         ],
     }
 
-    sent = send_payload_to_webhooks(
+    return send_payload_to_webhooks(
         webhook_group,
         payload,
         group_name,
+        delivery_key=(f"unknown:{news_id}" if track_delivery else None),
     )
-
-    return sent > 0
 
 
 def send_startup_message(latest):
@@ -938,23 +976,27 @@ def process_official_news(
                 f"{item['title']}"
             )
 
-            send_discord_embed(item)
+            all_sent = send_discord_embed(
+                item,
+                track_delivery=True,
+            )
 
-            sent += 1
+            if all_sent:
+                sent += 1
+            else:
+                print(
+                    f"Official EU article {news_id}: "
+                    "partial delivery; pending retry for missing destination(s)."
+                )
+                time.sleep(0.5)
+                continue
+
             time.sleep(0.5)
 
-        official_ids.add(
-            news_id
-        )
+        official_ids.add(news_id)
 
-    for item in current_news:
-        official_ids.add(
-            item["id"]
-        )
-
-    save_official_ids(
-        official_ids
-    )
+    # Do NOT mark an item as seen when its webhook delivery is incomplete.
+    save_official_ids(official_ids)
 
     print(
         f"Official EU update complete: "
@@ -2328,10 +2370,19 @@ def scan_for_leaks(
                 f"({language_info})"
             )
 
-            send_discord_embed(
+            all_sent = send_discord_embed(
                 article,
                 leak=True,
+                track_delivery=True,
             )
+
+            if not all_sent:
+                print(
+                    f"EU leak {news_id}: partial delivery; "
+                    "will retry missing webhook(s) in next scan."
+                )
+                pending_ids.add(news_id)
+                continue
 
             leak_ids.add(
                 news_id
@@ -2415,6 +2466,7 @@ def scan_for_leaks(
                 sent_unknown = send_unknown_discord_embed(
                     article,
                     reason,
+                    track_delivery=True,
                 )
 
                 if sent_unknown:
