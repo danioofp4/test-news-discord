@@ -110,10 +110,16 @@ jobs:
           DISCORD_MIRON_UNKNOWN_LEAKS: ${{ secrets.DISCORD_MIRON_UNKNOWN_LEAKS }}
         run: python cabal_news.py
 
-      - name: Save news state
+      - name: Save news state and delivery receipts
+        if: always()
         shell: bash
         run: |
-          if [ -z "$(git status --porcelain -- state.json leaks.json)" ]; then
+          if [ ! -d .git ]; then
+            echo "Checkout missing; nothing to commit."
+            exit 0
+          fi
+
+          if [ -z "$(git status --porcelain -- state.json leaks.json delivery_state.json)" ]; then
             echo "No state changes."
             exit 0
           fi
@@ -127,6 +133,10 @@ jobs:
 
           if [ -f leaks.json ]; then
             git add leaks.json
+          fi
+
+          if [ -f delivery_state.json ]; then
+            git add delivery_state.json
           fi
 
           if git diff --cached --quiet; then
