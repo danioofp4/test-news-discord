@@ -31,6 +31,10 @@
     "news:7892": [
       "main",
       "miron"
+    ],
+    "unknown:7904": [
+      "main-unknown",
+      "miron-unknown"
     ]
   }
 }
