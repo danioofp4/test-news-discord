@@ -71,6 +71,18 @@
     "news:7911": [
       "main",
       "miron"
+    ],
+    "unknown:7936": [
+      "main-unknown",
+      "miron-unknown"
+    ],
+    "unknown:7937": [
+      "main-unknown",
+      "miron-unknown"
+    ],
+    "unknown:7938": [
+      "main-unknown",
+      "miron-unknown"
     ]
   }
 }
